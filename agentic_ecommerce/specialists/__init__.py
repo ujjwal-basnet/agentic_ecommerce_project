@@ -1,0 +1,1 @@
+## raw capability, ZERO dependency to langchain or any tools  here
