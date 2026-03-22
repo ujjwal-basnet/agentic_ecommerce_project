@@ -32,12 +32,17 @@ apps/*/next-env.d.ts
 database/
 !database/images/
 database/smartshop.db
+database/smartshop.db-journal
+database/smartshop.db-shm
+database/smartshop.db-wal
 
 # ChromaDB
 chroma/
 
 # Uploads
 uploads/
+!uploads/user_images/
+!uploads/tryon_outputs/
 
 # Logs
 logs/
