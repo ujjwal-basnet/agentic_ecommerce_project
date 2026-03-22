@@ -1,1 +1,0 @@
-# weather_tool.py       ← GenUI: WeatherCard
