@@ -1,1 +1,86 @@
-db
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Node.js
+node_modules/
+apps/customer/node_modules/
+apps/owner/node_modules/
+.npm
+.yarn
+
+# Next.js
+.next/
+apps/customer/.next/
+apps/owner/.next/
+*.tsbuildinfo
+next-env.d.ts
+apps/*/next-env.d.ts
+
+# Database
+database/
+!database/images/
+database/smartshop.db
+database/smartshop.db-journal
+database/smartshop.db-shm
+database/smartshop.db-wal
+
+# ChromaDB
+chroma/
+
+# Uploads
+uploads/
+!uploads/user_images/
+!uploads/tryon_outputs/
+
+# Logs
+logs/
+*.log
+
+# MCP
+mcp_log.jsonl
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LangChain (old)
+.ruff_cache/
+
+__pycache__
+
+.agents
+
+
+.venv 
+
+plan.md 
+
+
+PROJECT_DESCRIPTION.md
+
+PLAN.MD
+
+FIX.MD
+
+fix_plan.md
+
+.windsurf
+
+
+.vscode

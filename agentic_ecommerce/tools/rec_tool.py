@@ -1,1 +1,0 @@
-# rec_tool.py           ← GenUI: RecommendGrid
