@@ -124,8 +124,9 @@ def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
         return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc}}]
 
     if intent == Intent.TRYON:
-        return [{"step": 1, "agent": "TryOnAgent",
-                 "input": {"product_image_path": "", "user_image_path": None}}]
+        # TryOn is now a specialist agent (direct REST API via button).
+        # If user types "try on X" in chat, guide them to use the Try On button.
+        return []  # returns chitchat — handled by LLM fallback
 
     if intent == Intent.OWNER:
         action, params = _infer_owner_action(user_input)
