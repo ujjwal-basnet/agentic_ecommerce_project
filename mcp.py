@@ -110,4 +110,5 @@ def get_registry() -> AgentRegistry:
     _registry.register("RecommendAgent", _load("recommend", "RecommendAgent"))
     _registry.register("WeatherAgent", _load("weather", "WeatherAgent"))
     _registry.register("OwnerAgent", _load("owner", "OwnerAgent"))
+    # TryOnAgent is now a specialist agent (direct REST API, not MCP)
     return _registry
