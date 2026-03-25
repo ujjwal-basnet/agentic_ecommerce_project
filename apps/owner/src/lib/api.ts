@@ -1,5 +1,12 @@
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export function imageUrl(path: string): string {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const clean = path.replace(/^\/+/, "");
+  return `${API}/${clean}`;
+}
+
 export async function fetchAnalytics(days = 30) {
   const res = await fetch(`${API}/owner/analytics?days=${days}`);
   return res.json();
