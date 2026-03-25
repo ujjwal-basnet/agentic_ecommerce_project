@@ -41,12 +41,11 @@ The customer's query is given below. Your job:
 2. Use CONVERSATION HISTORY to resolve references like "show me", "that one", "it", "the one I asked about" etc. For example, if user previously asked about sari and now says "show me", they mean the sari.
 3. Identify which products match or are relevant. Consider color, category, name, keywords, Nepali names, occasion, price range, and synonyms.
 4. Be STRICT about color: if the user asks for "red tshirt", do NOT include blue or black t-shirts.
-5. For BROAD queries like "all products", "everything", "what do you have", "what clothes", "show me all" → include ALL product IDs: [1,2,3,4,5,6,7].
+5. For BROAD queries like "all products", "everything", "what do you have", "what clothes", "show me all" → include ALL product IDs from the catalog.
 6. For PRICE RANGE queries (e.g. "under 20", "below 50", "cheapest"):
-   - Check the catalog prices carefully: Sari=10, Red T-Shirt=20, Blue T-Shirt=22, Black T-Shirt=25, Sunglasses=25, Black Midi Dress=75, Denim Jacket=90
-   - "under 20" means strictly less than 20, so only Sari (Rs. 10) qualifies
-   - "under 25" means Red T-Shirt (20), Blue T-Shirt (22), Sari (10)
-   - Be mathematically precise!
+   - Check the catalog prices carefully from the Quick Reference Table above.
+   - "under X" means strictly less than X. Be mathematically precise!
+   - Include ALL products that match the price condition.
 7. Generate a SHORT, natural reply that DIRECTLY ANSWERS the user's question.
    - IMPORTANT: Do NOT list all products with prices. Product cards will be shown separately.
    - Keep it brief — 1-2 sentences max.
