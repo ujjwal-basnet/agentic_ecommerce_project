@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { addToCartDirect, imageUrl } from "@/lib/api";
 import { useState } from "react";
+import TryOnModal from "./TryOnModal";
 
 interface Product {
   id: number;
@@ -29,6 +30,7 @@ export default function RecommendGrid({
 }) {
   const products = Array.isArray(data) ? data : [];
   const [adding, setAdding] = useState<number | null>(null);
+  const [tryOnProduct, setTryOnProduct] = useState<Product | null>(null);
 
   async function handleAdd(p: Product) {
     setAdding(p.id);
@@ -41,8 +43,13 @@ export default function RecommendGrid({
 
   if (!products.length) return null;
 
+  const tryOnModal = tryOnProduct ? (
+    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} />
+  ) : null;
+
   return (
     <div>
+      {tryOnModal}
       <div className="flex items-center gap-2 mb-4">
         <span className="w-1 h-1 rounded-full bg-primary/40" />
         <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Curated for you</span>
@@ -57,7 +64,7 @@ export default function RecommendGrid({
                 <div className="w-full h-full flex items-center justify-center text-on-surface-variant/30 font-headline text-3xl">S</div>
               )}
               {p.is_wearable && (
-                <button onClick={() => onSendMessage?.(`try on ${p.name}`)}
+                <button onClick={() => setTryOnProduct(p)}
                   className="absolute top-2 left-2 bg-primary/80 text-on-primary text-[9px] font-label uppercase tracking-widest px-2 py-1 rounded-full hover:bg-primary transition-colors">
                   Try On
                 </button>
