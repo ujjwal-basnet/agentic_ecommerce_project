@@ -3,7 +3,7 @@
 import copy
 import time
 from typing import Any
-from mcp import create_mcp_message, resolve_dependencies, get_registry
+from smartshop_mcp import create_mcp_message, resolve_dependencies, get_registry
 from log import log_agent_call, log_agent_result, log_error
 import database
 
