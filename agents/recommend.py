@@ -1,6 +1,6 @@
 """RecommendAgent — product recommendations. Sets _last_tool = 'recommend'."""
 
-from mcp import create_mcp_message
+from smartshop_mcp import create_mcp_message
 import database
 
 
