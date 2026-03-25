@@ -99,6 +99,14 @@ export async function checkout(sessionId: string) {
   return res.json();
 }
 
+export async function tryOnProduct(productId: number, photo: File): Promise<any> {
+  const body = new FormData();
+  body.append("product_id", String(productId));
+  body.append("photo", photo);
+  const res = await fetch(`${API}/specialist/tryon`, { method: "POST", body });
+  return res.json();
+}
+
 export function imageUrl(path: string) {
   if (!path) return "";
   if (path.startsWith("http")) return path;
