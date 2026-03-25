@@ -1,6 +1,6 @@
 """CartAgent — add/view/remove/clear/update. Sets _last_tool per action."""
 
-from mcp import create_mcp_message
+from smartshop_mcp import create_mcp_message
 import database
 
 
