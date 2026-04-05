@@ -25,20 +25,21 @@ export default function CartDrawer({
 }) {
   const items: CartItem[] = Array.isArray(data) ? data : (data as any)?.items || [];
   const [localItems, setLocalItems] = useState<CartItem[]>(items);
+  const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [orderResult, setOrderResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Only sync from parent on initial mount, not on every re-render
-  // This prevents stale parent data from overwriting local cart modifications
+  // Set mounted flag and sync initial data only once
   useEffect(() => {
-    // Check if localItems is empty but items has data (initial load)
-    if (localItems.length === 0 && items.length > 0) {
+    setMounted(true);
+    if (items.length > 0) {
       setLocalItems(items);
     }
-  }, []); // Empty deps = only run on mount
+  }, []);
 
-  const displayItems = localItems.length ? localItems : items;
+  // Use localItems only - never fall back to props.items which may be stale
+  const displayItems = localItems;
   const total = displayItems.reduce((s, i) => s + i.price * i.quantity, 0);
 
   async function handleQty(item: CartItem, delta: number) {
