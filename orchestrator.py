@@ -91,8 +91,8 @@ Return ONLY the intent word in lowercase."""
     return resp if resp in Intent.ALL else Intent.UNKNOWN
 
 
-def build_plan(user_input: str, intent: str) -> list[dict[str, Any]]:
-    plan = _build_plan_inner(user_input, intent)
+def build_plan(user_input: str, intent: str, mcp: bool = False) -> list[dict[str, Any]]:
+    plan = _build_plan_inner(user_input, intent, mcp)
     if plan:
         log_plan("", plan[0].get("agent", ""), intent, len(plan))
     else:
@@ -100,15 +100,15 @@ def build_plan(user_input: str, intent: str) -> list[dict[str, Any]]:
     return plan
 
 
-def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
+def _build_plan_inner(user_input: str, intent: str, mcp: bool = False) -> list[dict[str, Any]]:
     if intent == Intent.SEARCH:
         return [{"step": 1, "agent": "SearchAgent",
-                 "input": {"query": user_input, "filters": None}}]
+                 "input": {"query": user_input, "filters": None, "mcp": mcp}}]
 
     if intent == Intent.CART:
         action = _infer_cart_action(user_input)
         inp: dict[str, Any] = {"action": action, "product_name": None,
-                                "price": None, "quantity": None}
+                                "price": None, "quantity": None, "mcp": mcp}
         if action in ("add", "update", "remove"):
             inp["product_name"] = _extract_product_name(user_input)
             if action == "add":
@@ -117,11 +117,11 @@ def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
 
     if intent == Intent.REC:
         return [{"step": 1, "agent": "RecommendAgent",
-                 "input": {"user_input": user_input}}]
+                 "input": {"user_input": user_input, "mcp": mcp}}]
 
     if intent == Intent.WEATHER:
         loc = _extract_location(user_input) or "Kathmandu"
-        return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc}}]
+        return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc, "mcp": mcp}}]
 
     if intent == Intent.TRYON:
         # TryOn is now a specialist agent (direct REST API via button).
@@ -131,13 +131,13 @@ def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
     if intent == Intent.OWNER:
         action, params = _infer_owner_action(user_input)
         return [{"step": 1, "agent": "OwnerAgent",
-                 "input": {"action": action, "params": params}}]
+                 "input": {"action": action, "params": params, "mcp": mcp}}]
 
     if intent == Intent.CHITCHAT:
         return []
 
     return [{"step": 1, "agent": "SearchAgent",
-             "input": {"query": user_input, "filters": None}}]
+             "input": {"query": user_input, "filters": None, "mcp": mcp}}]
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
