@@ -132,7 +132,6 @@ export default function Home() {
           <nav className="hidden md:flex items-center space-x-8 font-headline font-medium tracking-tight text-sm">
             <a className="text-on-surface border-b border-on-surface pb-1" href="#">Chat</a>
             <a className="text-outline hover:text-on-surface transition-colors" href="#">Collections</a>
-            <a className="text-outline hover:text-on-surface transition-colors" href="#">Artisans</a>
           </nav>
           <div className="flex items-center space-x-3">
             <button onClick={handleClear} className="p-2 text-on-surface-variant hover:text-on-surface transition-colors active:scale-95" title="Clear chat">
