@@ -2,7 +2,7 @@
 
 import { Minus, Plus, Trash2, ArrowRight, CheckCircle } from "lucide-react";
 import { imageUrl, updateCartDirect, removeCartDirect, checkout } from "@/lib/api";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface CartItem {
   id: number;
@@ -31,12 +31,15 @@ export default function CartDrawer({
   const [orderResult, setOrderResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Set mounted flag and sync initial data only once
+  // Use a ref to track if we've already initialized to prevent overwriting on remount
+  const initializedRef = useRef(false);
   useEffect(() => {
     setMounted(true);
-    if (items.length > 0) {
+    if (!initializedRef.current && items.length > 0) {
+      initializedRef.current = true;
       setLocalItems(items);
     }
-  }, []);
+  }, [items]);
 
   // Use localItems only - never fall back to props.items which may be stale
   const displayItems = localItems;
