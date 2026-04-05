@@ -29,10 +29,14 @@ export default function CartDrawer({
   const [checkingOut, setCheckingOut] = useState(false);
   const [orderResult, setOrderResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Sync localItems with items prop when items change (e.g., after parent refresh)
+  // Only sync from parent on initial mount, not on every re-render
+  // This prevents stale parent data from overwriting local cart modifications
   useEffect(() => {
-    setLocalItems(items);
-  }, [items]);
+    // Check if localItems is empty but items has data (initial load)
+    if (localItems.length === 0 && items.length > 0) {
+      setLocalItems(items);
+    }
+  }, []); // Empty deps = only run on mount
 
   const displayItems = localItems.length ? localItems : items;
   const total = displayItems.reduce((s, i) => s + i.price * i.quantity, 0);
