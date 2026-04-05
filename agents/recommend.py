@@ -1,8 +1,6 @@
 """RecommendAgent — product recommendations. Sets _last_tool = 'recommend'."""
 
-from smartshop_mcp import create_mcp_message
-import database
-
+from mcp import create_mcp_message
 
 class RecommendAgent:
     def __init__(self):
