@@ -2,7 +2,7 @@
 
 import random
 import requests
-from smartshop_mcp import create_mcp_message
+from mcp import create_mcp_message
 import config
 
 
