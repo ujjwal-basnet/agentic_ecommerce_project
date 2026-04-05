@@ -2,7 +2,7 @@
 
 import { Minus, Plus, Trash2, ArrowRight, CheckCircle } from "lucide-react";
 import { imageUrl, updateCartDirect, removeCartDirect, checkout } from "@/lib/api";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface CartItem {
   id: number;
@@ -28,6 +28,11 @@ export default function CartDrawer({
   const [busy, setBusy] = useState<number | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [orderResult, setOrderResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Sync localItems with items prop when items change (e.g., after parent refresh)
+  useEffect(() => {
+    setLocalItems(items);
+  }, [items]);
 
   const displayItems = localItems.length ? localItems : items;
   const total = displayItems.reduce((s, i) => s + i.price * i.quantity, 0);
