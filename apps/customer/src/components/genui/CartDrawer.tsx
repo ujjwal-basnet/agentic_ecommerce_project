@@ -40,14 +40,16 @@ export default function CartDrawer({
 
   // Use localItems only - never fall back to props.items which may be stale
   const displayItems = localItems;
-  const total = displayItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const validItems = displayItems.filter(item => item.quantity > 0);
+  const total = validItems.reduce((s, i) => s + i.price * i.quantity, 0);
 
   async function handleQty(item: CartItem, delta: number) {
     setBusy(item.id);
     const newQty = item.quantity + delta;
     if (newQty <= 0) {
-      await removeCartDirect(sessionId, item.product_name);
-      setLocalItems((prev) => prev.filter((i) => i.id !== item.id));
+      // Don't remove item, just update quantity to 0
+      await updateCartDirect(sessionId, item.product_name, 0);
+      setLocalItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, quantity: 0 } : i)));
     } else {
       await updateCartDirect(sessionId, item.product_name, newQty);
       setLocalItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, quantity: newQty } : i)));
@@ -82,7 +84,7 @@ export default function CartDrawer({
     setCheckingOut(false);
   }
 
-  if (!displayItems.length) {
+  if (!validItems.length) {
     return (
       <div className="bg-surface-container-lowest rounded-2xl p-8 text-center border border-outline-variant/10 shadow-sm">
         <p className="font-headline text-sm text-on-surface-variant">Your selection is empty.</p>
@@ -93,7 +95,7 @@ export default function CartDrawer({
   return (
     <div className="bg-surface-container-lowest rounded-[2rem] overflow-hidden shadow-sm border border-outline-variant/10">
       <div className="p-6 md:p-8 space-y-6">
-        {displayItems.map((item, i) => (
+        {validItems.map((item, i) => (
           <div key={item.id} className={`flex items-center gap-6 group ${i > 0 ? "pt-6 border-t border-outline-variant/10" : ""}`}>
             <div className="w-20 h-20 bg-surface-container rounded-xl overflow-hidden flex-shrink-0">
               {item.image_path ? (
