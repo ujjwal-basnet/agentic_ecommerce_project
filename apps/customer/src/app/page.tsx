@@ -166,7 +166,7 @@ export default function Home() {
               {["Show me red shirts", "Recommend something", "Weather in Kathmandu", "View my cart"].map((q) => (
                 <button
                   key={q}
-                  onClick={() => { setInput(q); inputRef.current?.focus(); }}
+                  onClick={() => { sendMessage(q); }}
                   className="font-headline text-xs tracking-tight px-4 py-2.5 rounded-full bg-surface-container-lowest border border-outline-variant/10 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/30 transition-all shadow-sm"
                 >
                   {q}
