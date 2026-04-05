@@ -9,7 +9,7 @@ Flow:
 
 import json
 from pathlib import Path
-from smartshop_mcp import create_mcp_message
+from mcp import create_mcp_message
 import database
 import config
 
