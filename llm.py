@@ -88,20 +88,3 @@ def call_llm_vision(
         ],
     )
     return resp.choices[0].message.content.strip()
-
-
-def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024") -> bytes:
-    """Generate an image via DALL-E and return raw PNG bytes."""
-    client = _get_client()
-    if client is None:
-        raise RuntimeError("OpenAI not configured")
-
-    resp = client.images.generate(
-        model=model,
-        prompt=prompt,
-        n=1,
-        size=size,
-        response_format="b64_json",
-    )
-    import base64
-    return base64.b64decode(resp.data[0].b64_json)
