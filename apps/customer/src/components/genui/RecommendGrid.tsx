@@ -22,11 +22,13 @@ export default function RecommendGrid({
   sessionId,
   onCartUpdate,
   onSendMessage,
+  onTryOnResult,
 }: {
   data: Product[];
   sessionId: string;
   onCartUpdate?: () => void;
   onSendMessage?: (msg: string) => void;
+  onTryOnResult?: (imagePath: string, productName: string) => void;
 }) {
   const products = Array.isArray(data) ? data : [];
   const [adding, setAdding] = useState<number | null>(null);
@@ -44,7 +46,7 @@ export default function RecommendGrid({
   if (!products.length) return null;
 
   const tryOnModal = tryOnProduct ? (
-    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} />
+    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} onTryOnResult={onTryOnResult} />
   ) : null;
 
   return (
