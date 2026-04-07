@@ -29,16 +29,6 @@ export async function deleteProduct(productId: number) {
   return res.json();
 }
 
-export async function updateProduct(productId: number, fields: Record<string, any>) {
-  const body = new FormData();
-  body.append("product_id", String(productId));
-  for (const [k, v] of Object.entries(fields)) {
-    if (v !== null && v !== undefined) body.append(k, String(v));
-  }
-  const res = await fetch(`${API}/owner/products/update`, { method: "POST", body });
-  return res.json();
-}
-
 export async function postToFacebook(image: File, caption: string) {
   const body = new FormData();
   body.append("image", image);
