@@ -6,11 +6,13 @@ export async function fetchSSE(
   userImagePath: string | null,
   onEvent: (data: any) => void,
   onDone: () => void,
-  onError: (err: string) => void
+  onError: (err: string) => void,
+  interfaceMode: string = "web",
 ) {
   const body = new FormData();
   body.append("message", message);
   body.append("session_id", sessionId);
+  body.append("interface_mode", interfaceMode);
   if (userImagePath) body.append("user_image_path", userImagePath);
 
   try {
