@@ -31,6 +31,8 @@ from fastmcp import FastMCP
 import config          # loads .env
 import database        # DB helpers
 
+from channels.capabilities import MCP
+
 database.init_db()
 
 _log = logging.getLogger("smartshop.connector")
@@ -104,8 +106,8 @@ def chat(message: str, session_id: str = "") -> str:
     intent = classify_intent(message, context)
     _log.info("chat intent=%s message=%s", intent, message[:80])
 
-    # 2. Build plan
-    plan = build_plan(message, intent)
+    # 2. Build plan with MCP channel capabilities
+    plan = build_plan(message, intent, mcp=True, channel_caps=MCP)
 
     # 3. If no plan (chitchat / tryon), use LLM directly
     if not plan:
@@ -122,15 +124,18 @@ def chat(message: str, session_id: str = "") -> str:
             return reply
         return "I'm SmartShop, your shopping assistant! Try asking about products, recommendations, or your cart."
 
-    # 4. Execute plan
+    # 4. Execute plan with MCP channel capabilities
     result = execute_plan(
         plan=plan,
         session_id=session_id,
         user_input=message,
+        channel_caps=MCP,
     )
 
-    # 5. Format text-only response
-    return _format_text_response(result)
+    # 5. Format text-only response using renderer (consistent with web)
+    from renderer import render_for_api
+    rendered = render_for_api(result, mode="text")
+    return rendered.get("text", "Here you go!")
 
 
 # ── 2. Search Products ────────────────────────────────────────────────────
