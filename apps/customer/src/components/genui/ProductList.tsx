@@ -22,11 +22,13 @@ export default function ProductList({
   sessionId,
   onCartUpdate,
   onSendMessage,
+  onTryOnResult,
 }: {
   data: Product[];
   sessionId: string;
   onCartUpdate?: () => void;
   onSendMessage?: (msg: string) => void;
+  onTryOnResult?: (imagePath: string, productName: string) => void;
 }) {
   const products = Array.isArray(data) ? data : [];
   const [qtys, setQtys] = useState<Record<number, number>>({});
@@ -75,7 +77,7 @@ export default function ProductList({
   }
 
   const tryOnModal = tryOnProduct ? (
-    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} />
+    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} onTryOnResult={onTryOnResult} />
   ) : null;
 
   const useCards = products.length <= 3;
