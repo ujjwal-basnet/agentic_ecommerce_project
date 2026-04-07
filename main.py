@@ -10,6 +10,9 @@ import database
 from routes.customer import router as customer_router
 from routes.owner import router as owner_router
 from routes.specialist import router as specialist_router
+from routes.whatsapp import router as whatsapp_router
+from routes.facebook import router as facebook_router
+from routes.voice import router as voice_router
 
 app = FastAPI(title="SmartShop", version="2.0")
 
@@ -24,6 +27,9 @@ app.add_middleware(
 app.include_router(customer_router)
 app.include_router(owner_router)
 app.include_router(specialist_router)
+app.include_router(whatsapp_router)
+app.include_router(facebook_router)
+app.include_router(voice_router)
 
 # Static file mounts
 for name, path in [
