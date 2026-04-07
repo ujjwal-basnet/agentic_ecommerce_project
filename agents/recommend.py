@@ -9,8 +9,6 @@ class RecommendAgent:
 
     def handle(self, msg: dict, **kw) -> dict:
         self._last_tool = "recommend"
-        content = msg.get("content", {})
-        mcp = content.get("mcp", False)  # mcp=True means text-only
 
         try:
             products = database.get_all_products()
@@ -19,7 +17,7 @@ class RecommendAgent:
                     "status": "ok",
                     "tool": self._last_tool,
                     "products": [],
-                    "component": None if mcp else "RecommendGrid",
+                    "component": "RecommendGrid",
                     "text": "No products available for recommendations right now.",
                 })
 
@@ -49,21 +47,6 @@ class RecommendAgent:
                             "is_wearable": bool(p.get("is_wearable", 0)),
                         })
 
-            # For MCP (text-only), format as text list instead of component
-            if mcp:
-                text_lines = [f"Here are {len(recs)} recommendations:"]
-                for r in recs:
-                    text_lines.append(
-                        f"  • {r['name']} — Rs.{r['price']} [{r['category']}] [{r['color']}] (Stock: {r['quantity']})"
-                    )
-                return create_mcp_message("RecommendAgent", {
-                    "status": "ok",
-                    "tool": self._last_tool,
-                    "products": recs,
-                    "component": None,
-                    "text": "\n".join(text_lines),
-                })
-
             return create_mcp_message("RecommendAgent", {
                 "status": "ok",
                 "tool": self._last_tool,
@@ -79,5 +62,5 @@ class RecommendAgent:
                 "error": str(e),
                 "text": "Could not fetch recommendations.",
                 "products": [],
-                "component": None,
+                "component": "RecommendGrid",
             })
