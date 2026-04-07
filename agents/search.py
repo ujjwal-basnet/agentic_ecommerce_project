@@ -5,6 +5,7 @@ Flow:
 2. Ask LLM which product IDs match the user query.
 3. Fetch those products from the database.
 4. If LLM is unavailable, fall back to SQL keyword search.
+5. Format response based on channel capabilities.
 """
 
 import json
@@ -12,6 +13,16 @@ from pathlib import Path
 from custom_mcp import create_mcp_message
 import database
 import config
+
+from channels.capabilities import (
+    ChannelCapabilities,
+    ChannelFeatures,
+    WEB_APP,
+    VOICE,
+    WHATSAPP,
+    FB_MESSENGER,
+    truncate_text,
+)
 
 _CATALOG_PATH = Path(__file__).resolve().parent.parent / "product_description.md"
 _catalog_cache: str | None = None
@@ -66,7 +77,10 @@ class SearchAgent:
     def __init__(self):
         self._last_tool = None
 
-    def handle(self, msg: dict, **kw) -> dict:
+    def handle(self, msg: dict, channel_caps: ChannelCapabilities = None, **kw) -> dict:
+        if channel_caps is None:
+            channel_caps = WEB_APP
+            
         content = msg.get("content", {})
         query = content.get("query", "")
         session_id = content.get("session_id", "")
@@ -90,28 +104,10 @@ class SearchAgent:
                 items = self._sql_search(query)
                 reply = ""
 
-            if not reply:
-                if items:
-                    reply = f"Found {len(items)} product{'s' if len(items) != 1 else ''} matching your search!"
-                else:
-                    reply = f"Sorry, we don't have anything matching '{query}'. We carry t-shirts, dresses, jackets, sunglasses, and saris — let me know if any of those interest you!"
-
-            if not items:
-                return create_mcp_message("SearchAgent", {
-                    "status": "ok",
-                    "tool": self._last_tool,
-                    "products": [],
-                    "component": None,
-                    "text": reply,
-                })
-
-            return create_mcp_message("SearchAgent", {
-                "status": "ok",
-                "tool": self._last_tool,
-                "products": items,
-                "component": "ProductList",
-                "text": reply,
-            })
+            # Format response based on channel capabilities
+            formatted = self._format_for_channel(items, reply, query, channel_caps)
+            
+            return create_mcp_message("SearchAgent", formatted)
 
         except Exception as e:
             return create_mcp_message("SearchAgent", {
@@ -156,6 +152,114 @@ class SearchAgent:
             return items, reply
         except Exception:
             return None, ""
+
+    def _format_for_channel(
+        self, 
+        items: list[dict], 
+        reply: str, 
+        query: str,
+        caps: ChannelCapabilities
+    ) -> dict:
+        """Format search results based on channel capabilities.
+        
+        Returns dict with keys: status, tool, products, text, component, 
+        plus channel-specific keys like quick_replies, fb_template, ssml
+        """
+        result = {
+            "status": "ok",
+            "tool": self._last_tool,
+            "products": items,
+        }
+        
+        # VOICE: Short, speakable summary with SSML
+        if ChannelFeatures.VOICE_OUTPUT in caps.features:
+            if items:
+                names = [p["name"] for p in items[:3]]
+                count = len(items)
+                text = f"Found {count} items. Top picks: {', '.join(names)}."
+                if len(items) > 3:
+                    text += f" And {len(items) - 3} more."
+                text += " Say the item number to add to cart."
+                
+                # Simple SSML for TTS
+                ssml = f"<speak>Found <say-as interpret-as='cardinal'>{count}</say-as> items. Top picks: {', '.join(names)}. Say the item number to add to cart.</speak>"
+                
+                result["text"] = truncate_text(text, caps)
+                result["ssml"] = ssml
+                result["component"] = None
+            else:
+                text = "No products found. Try searching for shirts, dresses, or accessories."
+                result["text"] = truncate_text(text, caps)
+                result["ssml"] = f"<speak>{text}</speak>"
+                result["component"] = None
+            return result
+        
+        # WHATSAPP: Numbered list with quick replies
+        if caps == WHATSAPP:
+            if items:
+                lines = [f"*{len(items)} products found:*\n"]
+                for i, p in enumerate(items[:caps.max_carousel_items], 1):
+                    lines.append(f"{i}. *{p['name']}* - Rs.{p['price']}")
+                
+                text = "\n".join(lines)
+                result["text"] = truncate_text(text, caps)
+                result["quick_replies"] = [
+                    {"title": f"Buy #{i}", "payload": f"buy_{p['id']}"} 
+                    for i, p in enumerate(items[:3], 1)
+                ] + [{"title": "See more", "payload": "more_results"}]
+            else:
+                result["text"] = f"No products found for '{query}'. Try: shirts, dresses, jackets, or sunglasses."
+            result["component"] = None
+            return result
+        
+        # FB MESSENGER: Generic template carousel
+        if caps == FB_MESSENGER:
+            if items:
+                text = f"Found {len(items)} products matching your search!"
+                result["text"] = truncate_text(text, caps)
+                result["fb_template"] = {
+                    "type": "generic",
+                    "elements": [
+                        {
+                            "title": p["name"][:80],  # FB title limit
+                            "subtitle": f"Rs.{p['price']} | {p['category']}"[:80],
+                            "image_url": p.get("image_path", ""),
+                            "buttons": [
+                                {"type": "postback", "title": "Add to Cart", "payload": f"add_{p['id']}"},
+                                {"type": "postback", "title": "Details", "payload": f"detail_{p['id']}"}
+                            ][:caps.max_buttons]
+                        }
+                        for p in items[:caps.max_carousel_items]
+                    ]
+                }
+            else:
+                result["text"] = f"No products found for '{query}'. Try searching for shirts, dresses, or accessories."
+            result["component"] = None
+            return result
+        
+        # WEB with RICH_UI: Return component
+        if ChannelFeatures.RICH_UI in caps.features:
+            if not reply:
+                if items:
+                    reply = f"Found {len(items)} product{'s' if len(items) != 1 else ''} matching your search!"
+                else:
+                    reply = f"Sorry, we don't have anything matching '{query}'. We carry t-shirts, dresses, jackets, sunglasses, and saris — let me know if any of those interest you!"
+            
+            result["text"] = reply
+            result["component"] = "ProductList" if items else None
+            return result
+        
+        # MCP / Plain text fallback
+        if items:
+            lines = [f"Found {len(items)} products:\n"]
+            for p in items:
+                stock = "In stock" if p.get("quantity", 0) > 0 else "Out of stock"
+                lines.append(f"• {p['name']} - Rs.{p['price']} ({p['category']}) - {stock}")
+            result["text"] = truncate_text("\n".join(lines), caps)
+        else:
+            result["text"] = f"No products found for '{query}'. We have t-shirts, dresses, jackets, sunglasses, and saris."
+        result["component"] = None
+        return result
 
     def _sql_search(self, query: str) -> list[dict]:
         """Fallback: pure SQL keyword search."""
