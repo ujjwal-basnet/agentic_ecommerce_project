@@ -4,20 +4,6 @@ This file contains the complete product catalog for SmartShop. The AI assistant 
 
 ---
 
-## Product 1: Red T-Shirt
-- **ID**: 1
-- **Name**: Red T-Shirt
-- **Category**: tshirt
-- **Color**: red
-- **Price**: Rs. 20.0
-- **Stock**: 15
-- **Image**: database/images/red_tshirt.jpg
-- **Wearable**: Yes (try-on eligible)
-- **Description**: Classic red cotton crew-neck t-shirt.
-- **Keywords**: red, tshirt, t-shirt, shirt, cotton, casual, rato
-
----
-
 ## Product 2: Blue T-Shirt
 - **ID**: 2
 - **Name**: Blue T-Shirt
@@ -32,20 +18,6 @@ This file contains the complete product catalog for SmartShop. The AI assistant 
 
 ---
 
-## Product 3: Black T-Shirt
-- **ID**: 3
-- **Name**: Black T-Shirt
-- **Category**: tshirt
-- **Color**: black
-- **Price**: Rs. 25.0
-- **Stock**: 6
-- **Image**: database/images/black-tshirtfdas.jpg
-- **Wearable**: Yes (try-on eligible)
-- **Description**: Black casual t-shirt for everyday wear.
-- **Keywords**: black, tshirt, t-shirt, shirt, casual, dark
-
----
-
 ## Product 4: Black Midi Dress
 - **ID**: 4
 - **Name**: Black Midi Dress
@@ -57,20 +29,6 @@ This file contains the complete product catalog for SmartShop. The AI assistant 
 - **Wearable**: Yes (try-on eligible)
 - **Description**: Sleek black midi dress for evenings.
 - **Keywords**: black, dress, midi, evening, formal, elegant
-
----
-
-## Product 5: Denim Jacket
-- **ID**: 5
-- **Name**: Denim Jacket
-- **Category**: jacket
-- **Color**: blue
-- **Price**: Rs. 90.0
-- **Stock**: 4
-- **Image**: database/images/jacket_denim.png
-- **Wearable**: Yes (try-on eligible)
-- **Description**: Classic blue denim jacket, slim fit.
-- **Keywords**: blue, denim, jacket, jeans, casual, outerwear
 
 ---
 
@@ -146,11 +104,8 @@ This file contains the complete product catalog for SmartShop. The AI assistant 
 
 | ID | Name | Color | Price | Category | Wearable |
 |----|------|-------|-------|----------|----------|
-| 1 | Red T-Shirt | red | 20.0 | tshirt | Yes |
 | 2 | Blue T-Shirt | blue | 22.0 | tshirt | Yes |
-| 3 | Black T-Shirt | black | 25.0 | tshirt | Yes |
 | 4 | Black Midi Dress | black | 75.0 | dress | Yes |
-| 5 | Denim Jacket | blue | 90.0 | jacket | Yes |
 | 6 | Sunglasses | black | 25.0 | accessories | No |
 | 42 | hot pant | pink | 1200.0 | pant | Yes |
 | 44 | fad | adfa | 112.0 | fads | Yes |
@@ -158,24 +113,22 @@ This file contains the complete product catalog for SmartShop. The AI assistant 
 | 46 | gs | df | 12.0 | sgff | Yes |
 
 ## Category Summary
-- **Tshirt**: Red T-Shirt — Rs. 20.0, Blue T-Shirt — Rs. 22.0, Black T-Shirt — Rs. 25.0
+- **Tshirt**: Blue T-Shirt — Rs. 22.0
 - **Dress**: Black Midi Dress — Rs. 75.0
-- **Jacket**: Denim Jacket — Rs. 90.0
 - **Accessories**: Sunglasses — Rs. 25.0
 - **Pant**: hot pant — Rs. 1200.0
 - **Fads**: fad — Rs. 112.0, ubasnet — Rs. 12.0
 - **Sgff**: gs — Rs. 12.0
 
 ## Color Availability
-- **Red**: Red T-Shirt
-- **Blue**: Blue T-Shirt, Denim Jacket
-- **Black**: Black T-Shirt, Black Midi Dress, Sunglasses
+- **Blue**: Blue T-Shirt
+- **Black**: Black Midi Dress, Sunglasses
 - **Pink**: hot pant
 - **Adfa**: fad
 - **Fads**: ubasnet
 - **Df**: gs
 
 ## Price Ranges
-- **Under Rs. 25**: Red T-Shirt (20.0), Blue T-Shirt (22.0), ubasnet (12.0), gs (12.0)
-- **Rs. 25-50**: Black T-Shirt (25.0), Sunglasses (25.0)
-- **Above Rs. 50**: Black Midi Dress (75.0), Denim Jacket (90.0), hot pant (1200.0), fad (112.0)
+- **Under Rs. 25**: Blue T-Shirt (22.0), ubasnet (12.0), gs (12.0)
+- **Rs. 25-50**: Sunglasses (25.0)
+- **Above Rs. 50**: Black Midi Dress (75.0), hot pant (1200.0), fad (112.0)
