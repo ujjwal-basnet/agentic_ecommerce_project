@@ -7,9 +7,10 @@ import { tryOnProduct, imageUrl } from "@/lib/api";
 interface TryOnModalProps {
   product: { id: number; name: string; image_path?: string };
   onClose: () => void;
+  onTryOnResult?: (imagePath: string, productName: string) => void;
 }
 
-export default function TryOnModal({ product, onClose }: TryOnModalProps) {
+export default function TryOnModal({ product, onClose, onTryOnResult }: TryOnModalProps) {
   const [step, setStep] = useState<"upload" | "loading" | "result" | "error">("upload");
   const [preview, setPreview] = useState<string | null>(null);
   const [resultPath, setResultPath] = useState("");
@@ -32,6 +33,8 @@ export default function TryOnModal({ product, onClose }: TryOnModalProps) {
       if (res.success) {
         setResultPath(res.image_path);
         setStep("result");
+        // Push result image into chat stream so user can scroll back to it
+        onTryOnResult?.(res.image_path, product.name);
       } else {
         setErrorMsg(res.error || "Try-on failed.");
         setStep("error");
