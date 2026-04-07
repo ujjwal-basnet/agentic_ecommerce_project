@@ -17,26 +17,29 @@ export default function CartDrawer({
   data,
   sessionId,
   onCartUpdate,
+  onOrderPlaced,
 }: {
-  data: CartItem[] | { items?: CartItem[]; count?: number; total?: number };
+  data: any;
   sessionId: string;
   onCartUpdate?: () => void;
   onSendMessage?: (msg: string) => void;
+  onOrderPlaced?: (orderResult: any) => void;
 }) {
   const items: CartItem[] = Array.isArray(data) ? data : (data as any)?.items || [];
   const [localItems, setLocalItems] = useState<CartItem[]>(items);
   const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
-  const [orderResult, setOrderResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Set mounted flag and sync initial data only once
-  // Use a ref to track if we've already initialized to prevent overwriting on remount
-  const initializedRef = useRef(false);
+  // Track previous items to detect actual data changes from parent
+  const prevItemsRef = useRef<CartItem[]>([]);
   useEffect(() => {
     setMounted(true);
-    if (!initializedRef.current && items.length > 0) {
-      initializedRef.current = true;
+    // Only update if items actually changed (new data from parent)
+    const itemsChanged = items.length !== prevItemsRef.current.length ||
+      items.some((item, i) => item.id !== prevItemsRef.current[i]?.id);
+    if (itemsChanged) {
+      prevItemsRef.current = items;
       setLocalItems(items);
     }
   }, [items]);
@@ -71,20 +74,68 @@ export default function CartDrawer({
 
   async function handleCheckout() {
     setCheckingOut(true);
-    setOrderResult(null);
     try {
+      const snapshot = [...validItems];
+      const snapshotTotal = total;
       const res = await checkout(sessionId);
       if (res?.success) {
-        setOrderResult({ ok: true, msg: res.message || "Order placed successfully!" });
+        const orderResult = {
+          items: snapshot,
+          total: snapshotTotal,
+          msg: res.message || "Order placed successfully!",
+        };
+        onOrderPlaced?.(orderResult);
         setLocalItems([]);
+        setCheckingOut(false);
         onCartUpdate?.();
+        return;
       } else {
-        setOrderResult({ ok: false, msg: res?.message || "Checkout failed." });
+        alert(res?.message || "Checkout failed.");
       }
     } catch (err: any) {
-      setOrderResult({ ok: false, msg: `Checkout failed: ${err.message}` });
+      alert(`Checkout failed: ${err.message}`);
     }
     setCheckingOut(false);
+  }
+
+  const orderDone = data?.__orderDone;
+  if (orderDone) {
+    const cd = orderDone;
+    return (
+      <div className="bg-surface-container-lowest rounded-[2rem] overflow-hidden shadow-sm border border-outline-variant/10">
+        <div className="p-6 md:p-8 space-y-6">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
+              <CheckCircle size={28} className="text-green-600" />
+            </div>
+            <h3 className="font-headline font-bold text-lg text-on-surface tracking-tight">Order Confirmed</h3>
+            <p className="font-headline text-sm text-on-surface-variant text-center">{cd.msg}</p>
+          </div>
+          <div className="border-t border-outline-variant/10 pt-4 space-y-3">
+            {cd.items.map((item: CartItem) => (
+              <div key={item.id} className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-surface-container rounded-lg overflow-hidden flex-shrink-0">
+                  {item.image_path ? (
+                    <img src={imageUrl(item.image_path)} alt={item.product_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-on-surface-variant/30 font-headline text-sm">S</div>
+                  )}
+                </div>
+                <div className="flex-grow">
+                  <p className="font-headline font-medium text-sm text-on-surface">{item.product_name}</p>
+                  <p className="text-xs text-on-surface-variant">Qty: {item.quantity} × Rs. {item.price.toFixed(2)}</p>
+                </div>
+                <p className="font-headline font-bold text-sm text-on-surface">Rs. {(item.price * item.quantity).toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between pt-4 border-t border-on-surface/5">
+            <span className="font-headline font-extrabold text-base uppercase tracking-tight">Total Paid</span>
+            <span className="font-headline font-extrabold text-lg text-primary">Rs. {cd.total.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!validItems.length) {
@@ -151,19 +202,13 @@ export default function CartDrawer({
           </div>
         </div>
 
-        {orderResult && (
-          <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-headline ${orderResult.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
-            {orderResult.ok && <CheckCircle size={16} />}
-            {orderResult.msg}
-          </div>
-        )}
         <button
           onClick={handleCheckout}
-          disabled={checkingOut || (orderResult?.ok ?? false)}
+          disabled={checkingOut}
           className="w-full bg-primary hover:bg-primary-dim text-on-primary py-4 rounded-xl font-headline font-bold text-sm uppercase tracking-[0.2em] shadow-lg shadow-primary/10 transition-all active:scale-[0.98] flex items-center justify-center gap-3 group disabled:opacity-50"
         >
-          {checkingOut ? "Placing Order..." : orderResult?.ok ? "Order Placed!" : "Proceed to Checkout"}
-          {!checkingOut && !orderResult?.ok && <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />}
+          {checkingOut ? "Placing Order..." : "Proceed to Checkout"}
+          {!checkingOut && <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />}
         </button>
       </div>
     </div>
