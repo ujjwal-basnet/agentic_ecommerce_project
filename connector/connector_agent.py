@@ -153,7 +153,12 @@ def chat(message: str, session_id: str = "") -> str:
         session_id=session_id,
         user_input=message,
     )
-    return _format_text_response(result)
+
+    # Format text-only response using renderer (consistent with web)
+    sys.path = [str(parent)] + _path_backup  # Restore path for renderer import
+    from renderer import render_for_api
+    rendered = render_for_api(result, mode="text")
+    return rendered.get("text", "Here you go!")
 
 
 # ── 2. Search Products ────────────────────────────────────────────────────
