@@ -45,8 +45,11 @@ uploads/
 !uploads/tryon_outputs/
 
 # Logs
-logs/
+logs/*.jsonl
+logs/*.log
 *.log
+!logs/__init__.py
+!logs/logger.py
 
 # MCP
 mcp_log.jsonl

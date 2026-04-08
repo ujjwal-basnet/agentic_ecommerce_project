@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 import config
 import database
 from channels.capabilities import WHATSAPP, get_channel
-from log import log_event, log_user_input
+from logs import log_event, log_user_input
 
 router = APIRouter(prefix="/api/whatsapp")
 _log = logging.getLogger("smartshop.whatsapp")

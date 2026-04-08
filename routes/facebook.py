@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 import config
 import database
 from channels.capabilities import FB_MESSENGER
-from log import log_event, log_user_input
+from logs import log_event, log_user_input
 
 router = APIRouter(prefix="/api/facebook")
 _log = logging.getLogger("smartshop.facebook")

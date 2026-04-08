@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 import database
 from channels.capabilities import VOICE
-from log import log_event, log_user_input
+from logs import log_event, log_user_input
 
 router = APIRouter(prefix="/api/voice")
 _log = logging.getLogger("smartshop.voice")

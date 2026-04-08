@@ -4,7 +4,7 @@ import re
 from typing import Any
 import config
 from llm import call_llm
-from log import log_event, log_plan
+from logs import log_event, log_plan
 
 from channels.capabilities import ChannelCapabilities, WEB_APP
 

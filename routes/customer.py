@@ -10,7 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 
 import database
 import session_memory
-from log import log_user_input, log_sse, log_direct_cart, log_event, log_render
+from logs import log_user_input, log_sse, log_direct_cart, log_event, log_render
 
 from channels.capabilities import WEB_APP, CHANNELS, get_renderer_mode
 
