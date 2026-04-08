@@ -169,9 +169,9 @@ def _build_plan_inner(
         return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.TRYON:
-        # TryOn is now a specialist agent (direct REST API via button).
-        # If user types "try on X" in chat, guide them to use the Try On button.
-        return []  # returns chitchat — handled by LLM fallback
+        product_name = _extract_product_name(user_input)
+        return [{"step": 1, "agent": "TryOnAgent",
+                 "input": {"product_name": product_name, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.OWNER:
         action, params = _infer_owner_action(user_input)
