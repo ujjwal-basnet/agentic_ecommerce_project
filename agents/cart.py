@@ -2,6 +2,15 @@
 
 from custom_mcp import create_mcp_message
 import database
+from channels.capabilities import (
+    ChannelCapabilities,
+    ChannelFeatures,
+    WEB_APP,
+    WHATSAPP,
+    FB_MESSENGER,
+    truncate_text,
+    should_send_component,
+)
 
 
 _ACTION_TOOL = {
@@ -17,7 +26,10 @@ class CartAgent:
     def __init__(self):
         self._last_tool = None
 
-    def handle(self, msg: dict, **kw) -> dict:
+    def handle(self, msg: dict, channel_caps: ChannelCapabilities = None, **kw) -> dict:
+        if channel_caps is None:
+            channel_caps = WEB_APP
+
         content = msg.get("content", {})
         action = content.get("action", "view")
         session_id = content.get("session_id", "")
@@ -45,89 +57,37 @@ class CartAgent:
                 cart = database.db_get_cart(session_id)
                 count = sum(int(i.get("quantity", 0)) for i in cart)
                 total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-                return create_mcp_message("CartAgent", {
-                    "status": "ok",
-                    "tool": self._last_tool,
-                    "success": True,
-                    "message": f"Added {quantity}x {product_name} to cart!",
-                    "items": cart,
-                    "count": count,
-                    "total": total,
-                    "component": "CartConfirmation",
-                    "text": f"Added {quantity}x {product_name} to cart!",
-                })
+                text = f"Added {quantity}x {product_name} to cart!"
+                return self._format("ok", self._last_tool, text, cart, count, total, channel_caps)
 
             elif action == "remove" and product_name:
                 database.db_remove_from_cart(session_id, product_name)
                 cart = database.db_get_cart(session_id)
                 count = sum(int(i.get("quantity", 0)) for i in cart)
                 total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-                return create_mcp_message("CartAgent", {
-                    "status": "ok",
-                    "tool": "remove_from_cart",
-                    "success": True,
-                    "message": f"Removed {product_name} from cart.",
-                    "items": cart,
-                    "count": count,
-                    "total": total,
-                    "component": "CartConfirmation",
-                    "text": f"Removed {product_name} from cart.",
-                })
+                text = f"Removed {product_name} from cart."
+                return self._format("ok", "remove_from_cart", text, cart, count, total, channel_caps)
 
             elif action == "clear":
                 database.db_clear_cart(session_id)
-                return create_mcp_message("CartAgent", {
-                    "status": "ok",
-                    "tool": "clear_cart",
-                    "success": True,
-                    "message": "Cart cleared!",
-                    "items": [],
-                    "count": 0,
-                    "total": 0.0,
-                    "component": "CartDrawer",
-                    "text": "Cart cleared!",
-                })
+                return self._format("ok", "clear_cart", "Cart cleared!", [], 0, 0.0, channel_caps)
 
             elif action == "update" and product_name:
                 database.db_update_cart_quantity(session_id, product_name, int(quantity or 1))
                 cart = database.db_get_cart(session_id)
                 count = sum(int(i.get("quantity", 0)) for i in cart)
                 total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-                return create_mcp_message("CartAgent", {
-                    "status": "ok",
-                    "tool": "update_cart",
-                    "success": True,
-                    "message": f"Updated {product_name} quantity to {quantity}.",
-                    "items": cart,
-                    "count": count,
-                    "total": total,
-                    "component": "CartDrawer",
-                    "text": f"Updated {product_name} quantity to {quantity}.",
-                })
+                text = f"Updated {product_name} quantity to {quantity}."
+                return self._format("ok", "update_cart", text, cart, count, total, channel_caps)
 
             else:  # view
                 cart = database.db_get_cart(session_id)
                 count = sum(int(i.get("quantity", 0)) for i in cart)
                 total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
                 if not cart:
-                    return create_mcp_message("CartAgent", {
-                        "status": "ok",
-                        "tool": "view_cart",
-                        "items": [],
-                        "count": 0,
-                        "total": 0.0,
-                        "component": "CartDrawer",
-                        "text": "Your cart is empty. Start shopping!",
-                    })
-                return create_mcp_message("CartAgent", {
-                    "status": "ok",
-                    "tool": "view_cart",
-                    "items": cart,
-                    "count": count,
-                    "total": total,
-                    "component": "CartDrawer",
-                    "text": f"You have {count} item{'s' if count != 1 else ''} in your cart (Rs. {total}).",
-                })
+                    return self._format("ok", "view_cart", "Your cart is empty. Start shopping!", [], 0, 0.0, channel_caps)
+                text = f"You have {count} item{'s' if count != 1 else ''} in your cart (Rs. {total})."
+                return self._format("ok", "view_cart", text, cart, count, total, channel_caps)
 
         except Exception as e:
             return create_mcp_message("CartAgent", {
@@ -137,3 +97,94 @@ class CartAgent:
                 "text": "Cart operation failed.",
                 "component": None,
             })
+
+    def _format(
+        self,
+        status: str,
+        tool: str,
+        text: str,
+        cart: list,
+        count: int,
+        total: float,
+        caps: ChannelCapabilities,
+    ) -> dict:
+        """Format cart response based on channel capabilities."""
+        base = {
+            "status": status,
+            "tool": tool,
+            "success": status == "ok",
+            "items": cart,
+            "count": count,
+            "total": total,
+            "cart_count": count,
+        }
+
+        # VOICE: short speakable text + SSML
+        if ChannelFeatures.VOICE_OUTPUT in caps.features:
+            if cart:
+                summary = f"{count} item{'s' if count != 1 else ''}, total Rs. {total}."
+                voice_text = f"{text} {summary}"
+                base["ssml"] = (
+                    f"<speak>{text} You have <say-as interpret-as='cardinal'>{count}</say-as> "
+                    f"items totalling <say-as interpret-as='cardinal'>{int(total)}</say-as> rupees.</speak>"
+                )
+            else:
+                voice_text = text
+                base["ssml"] = f"<speak>{text}</speak>"
+            base["text"] = truncate_text(voice_text, caps)
+            base["component"] = None
+            return create_mcp_message("CartAgent", base)
+
+        # WHATSAPP: numbered list, no markdown
+        if caps == WHATSAPP:
+            if cart:
+                lines = [text, ""]
+                for i, item in enumerate(cart[:caps.max_carousel_items], 1):
+                    lines.append(
+                        f"{i}. {item['product_name']} x{item['quantity']} - Rs.{item['price']}"
+                    )
+                lines.append(f"\nTotal: Rs.{total}")
+                base["text"] = truncate_text("\n".join(lines), caps)
+                base["quick_replies"] = [
+                    {"title": "Checkout", "payload": "checkout"},
+                    {"title": "Clear cart", "payload": "clear_cart"},
+                ]
+            else:
+                base["text"] = text
+            base["component"] = None
+            return create_mcp_message("CartAgent", base)
+
+        # FB MESSENGER: structured template
+        if caps == FB_MESSENGER:
+            if cart:
+                base["text"] = truncate_text(text, caps)
+                base["fb_template"] = {
+                    "type": "button",
+                    "text": f"Cart: {count} items — Rs.{total}",
+                    "buttons": [
+                        {"type": "postback", "title": "Checkout", "payload": "checkout"},
+                        {"type": "postback", "title": "View Cart", "payload": "view_cart"},
+                    ][:caps.max_buttons],
+                }
+            else:
+                base["text"] = text
+            base["component"] = None
+            return create_mcp_message("CartAgent", base)
+
+        # WEB: React component
+        if should_send_component(caps):
+            base["text"] = text
+            base["component"] = "CartDrawer" if tool in ("view_cart", "clear_cart", "update_cart") else "CartConfirmation"
+            return create_mcp_message("CartAgent", base)
+
+        # MCP / plain text fallback
+        if cart:
+            lines = [text, ""]
+            for item in cart:
+                lines.append(f"• {item['product_name']} x{item['quantity']} — Rs.{item['price']}")
+            lines.append(f"\nTotal: {count} item(s), Rs.{total}")
+            base["text"] = truncate_text("\n".join(lines), caps)
+        else:
+            base["text"] = text
+        base["component"] = None
+        return create_mcp_message("CartAgent", base)
