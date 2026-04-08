@@ -71,13 +71,7 @@ def execute_plan(
 
         t0 = time.time()
         try:
-            # Pass channel_caps to handler if it accepts it
-            import inspect
-            sig = inspect.signature(handler)
-            if "channel_caps" in sig.parameters:
-                mcp_out = handler(mcp_in, channel_caps=channel_caps)
-            else:
-                mcp_out = handler(mcp_in)
+            mcp_out = handler(mcp_in, channel_caps=channel_caps)
         except Exception as exc:
             log_error(session_id, agent_name, str(exc), attempt=1)
             mcp_out = create_mcp_message(agent_name, {
@@ -107,11 +101,17 @@ def execute_plan(
     if component and not should_send_component(channel_caps):
         component = None
 
+    # Collect inline images (e.g. try-on output)
+    images = None
+    if last.get("image_path"):
+        images = [last["image_path"]]
+
     result = {
         "text": last.get("text", "Here you go!"),
         "component": component,
         "tool": tool,
         "data": data,
+        "images": images,
         "cart_count": database.cart_count(session_id),
         "steps": len(plan),
         "elapsed": round(total_elapsed, 3),
@@ -127,5 +127,5 @@ def _err(error: str, step: int) -> dict[str, Any]:
     return {
         "text": f"Something went wrong at step {step}: {error}",
         "component": None, "data": None, "tool": None,
-        "cart_count": 0, "steps": step - 1, "elapsed": 0.0,
+        "images": None, "cart_count": 0, "steps": step - 1, "elapsed": 0.0,
     }
