@@ -4,13 +4,23 @@ import random
 import requests
 from custom_mcp import create_mcp_message
 import config
+from channels.capabilities import (
+    ChannelCapabilities,
+    ChannelFeatures,
+    WEB_APP,
+    truncate_text,
+    should_send_component,
+)
 
 
 class WeatherAgent:
     def __init__(self):
         self._last_tool = None
 
-    def handle(self, msg: dict, **kw) -> dict:
+    def handle(self, msg: dict, channel_caps: ChannelCapabilities = None, **kw) -> dict:
+        if channel_caps is None:
+            channel_caps = WEB_APP
+
         content = msg.get("content", {})
         location = content.get("location", "Kathmandu")
         self._last_tool = "get_weather"
@@ -21,13 +31,7 @@ class WeatherAgent:
             else:
                 data = self._mock(location)
 
-            return create_mcp_message("WeatherAgent", {
-                "status": "ok",
-                "tool": self._last_tool,
-                **data,
-                "component": "WeatherCard",
-                "text": f"Weather in {data['location']}: {data['weather']}, {data['temperature']}°C.",
-            })
+            return self._format_for_channel(data, channel_caps)
 
         except Exception as e:
             return create_mcp_message("WeatherAgent", {
@@ -37,6 +41,48 @@ class WeatherAgent:
                 "text": f"Could not fetch weather for {location}.",
                 "component": None,
             })
+
+    def _format_for_channel(self, data: dict, caps: ChannelCapabilities) -> dict:
+        """Format weather response based on channel capabilities."""
+        loc = data["location"]
+        temp = data["temperature"]
+        weather = data["weather"]
+        feels = data.get("feels_like", temp)
+        humidity = data.get("humidity", "")
+
+        base = {
+            "status": "ok",
+            "tool": self._last_tool,
+            **data,
+        }
+
+        # VOICE: short speakable text + SSML
+        if ChannelFeatures.VOICE_OUTPUT in caps.features:
+            text = f"It's {weather} in {loc}, {temp} degrees."
+            base["text"] = truncate_text(text, caps)
+            base["ssml"] = (
+                f"<speak>It's {weather} in {loc}, "
+                f"<say-as interpret-as='cardinal'>{int(temp)}</say-as> degrees celsius, "
+                f"feels like <say-as interpret-as='cardinal'>{int(feels)}</say-as>.</speak>"
+            )
+            base["component"] = None
+            return create_mcp_message("WeatherAgent", base)
+
+        # WEB: React component
+        if should_send_component(caps):
+            base["text"] = f"Weather in {loc}: {weather}, {temp}°C."
+            base["component"] = "WeatherCard"
+            return create_mcp_message("WeatherAgent", base)
+
+        # WHATSAPP / FB / MCP: plain text
+        text = (
+            f"Weather in {loc}: {weather}\n"
+            f"Temperature: {temp}°C (feels like {feels}°C)\n"
+            f"Humidity: {humidity}%"
+        )
+        base["text"] = truncate_text(text, caps)
+        base["component"] = None
+        return create_mcp_message("WeatherAgent", base)
 
     def _fetch_real(self, location: str) -> dict:
         url = "https://api.openweathermap.org/data/2.5/weather"
