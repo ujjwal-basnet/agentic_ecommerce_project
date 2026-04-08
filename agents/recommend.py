@@ -1,6 +1,6 @@
 """RecommendAgent — product recommendations. Sets _last_tool = 'recommend'."""
 
-from custom_mcp import create_mcp_message
+from agent_protocol import create_mcp_message
 import database
 from channels.capabilities import (
     ChannelCapabilities,

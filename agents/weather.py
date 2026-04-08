@@ -2,7 +2,7 @@
 
 import random
 import requests
-from custom_mcp import create_mcp_message
+from agent_protocol import create_mcp_message
 import config
 from channels.capabilities import (
     ChannelCapabilities,

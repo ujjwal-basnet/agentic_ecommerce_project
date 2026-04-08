@@ -10,7 +10,7 @@ When a user types "try on the red shirt" in chat (any channel), this agent:
 import logging
 from pathlib import Path
 
-from custom_mcp import create_mcp_message
+from agent_protocol import create_mcp_message
 import database
 from channels.capabilities import (
     ChannelCapabilities,

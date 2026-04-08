@@ -10,7 +10,7 @@ Flow:
 
 import json
 from pathlib import Path
-from custom_mcp import create_mcp_message
+from agent_protocol import create_mcp_message
 import database
 import config
 
