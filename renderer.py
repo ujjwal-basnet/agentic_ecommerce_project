@@ -25,6 +25,7 @@ TOOL_COMPONENT_MAP: dict[str, str | None] = {
     "add_product": None,
     "get_inventory": None,
     "post_to_facebook": None,
+    "virtual_try_on": None,
 }
 
 
