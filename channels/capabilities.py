@@ -6,7 +6,6 @@ and provides utilities for formatting responses appropriately.
 
 from enum import Flag, auto
 from dataclasses import dataclass
-from typing import Optional
 
 
 class ChannelFeatures(Flag):
@@ -83,12 +82,23 @@ MCP = ChannelCapabilities(
     supports_ssml=False,
 )
 
+INSTAGRAM = ChannelCapabilities(
+    name="instagram",
+    features=ChannelFeatures.TEXT | ChannelFeatures.IMAGES |
+               ChannelFeatures.BUTTONS | ChannelFeatures.QUICK_REPLIES,
+    max_text_length=1000,
+    max_carousel_items=10,
+    max_buttons=3,
+    supports_ssml=False,
+)
+
 
 # Channel lookup by name
 CHANNELS = {
     "web": WEB_APP,
     "whatsapp": WHATSAPP,
     "facebook": FB_MESSENGER,
+    "instagram": INSTAGRAM,
     "voice": VOICE,
     "mcp": MCP,
 }
@@ -134,6 +144,25 @@ def should_send_component(caps: ChannelCapabilities) -> bool:
         True if channel supports RICH_UI components
     """
     return ChannelFeatures.RICH_UI in caps.features
+
+
+def can_send_images(caps: ChannelCapabilities) -> bool:
+    """Check if channel can display images."""
+    return ChannelFeatures.IMAGES in caps.features
+
+
+def get_renderer_mode(caps: ChannelCapabilities) -> str:
+    """Derive renderer mode string from channel capabilities.
+
+    Returns:
+        "web" for rich UI channels, "messaging" for image-capable text channels,
+        "text" for text-only channels.
+    """
+    if ChannelFeatures.RICH_UI in caps.features:
+        return "web"
+    if ChannelFeatures.IMAGES in caps.features:
+        return "messaging"
+    return "text"
 
 
 def truncate_text(text: str, caps: ChannelCapabilities) -> str:
