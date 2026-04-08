@@ -545,56 +545,6 @@ def _get_recent_context(session_id: str) -> str:
         return ""
 
 
-def _format_text_response(result: dict) -> str:
-    """Convert an executor result dict to a clean text string."""
-    text = result.get("text", "")
-    data = result.get("data")
-
-    if isinstance(data, dict):
-        products = data.get("products") or data.get("items")
-        if isinstance(products, list) and products:
-            lines = [text, ""]
-            for p in products:
-                if isinstance(p, dict):
-                    name = p.get("name") or p.get("product_name", "")
-                    price = p.get("price", "")
-                    cat = p.get("category", "")
-                    color = p.get("color", "")
-                    qty = p.get("quantity", "")
-                    parts = [f"  • {name}"]
-                    if price:
-                        parts.append(f"Rs.{price}")
-                    if cat:
-                        parts.append(f"[{cat}]")
-                    if color:
-                        parts.append(f"[{color}]")
-                    if qty:
-                        parts.append(f"(Stock: {qty})")
-                    # Join first two with " — ", rest with spaces
-                    if len(parts) > 1:
-                        lines.append(" — ".join(parts[:2]) + " " + " ".join(parts[2:]))
-                    else:
-                        lines.append(parts[0])
-            return "\n".join(lines)
-
-    if isinstance(data, list) and data:
-        lines = [text, ""]
-        for p in data:
-            if isinstance(p, dict):
-                name = p.get("name") or p.get("product_name", "")
-                price = p.get("price", "")
-                lines.append(
-                    f"  • {name} — Rs.{price}" if price else f"  • {name}"
-                )
-        return "\n".join(lines)
-
-    cart_count = result.get("cart_count", 0)
-    if cart_count and cart_count > 0 and "cart" not in text.lower():
-        text += f" (Cart: {cart_count} items)"
-
-    return text or "Done."
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 #  ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
