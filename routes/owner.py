@@ -5,6 +5,7 @@ import json
 import os
 from fastapi import APIRouter, UploadFile, File, Form
 import database
+import catalog_generator
 
 router = APIRouter(prefix="/owner")
 
@@ -50,12 +51,22 @@ async def new_product(
         description=description, quantity=quantity,
         image_path=image_path, tags="[]", is_wearable=int(is_wearable),
     )
+    # Enrich description via LLM and regenerate catalog
+    try:
+        catalog_generator.enrich_and_regenerate(pid)
+    except Exception as e:
+        print(f"[owner] Catalog enrichment failed: {e}")
     return {"success": True, "product_id": pid}
 
 
 @router.post("/products/delete")
 async def delete_product(product_id: int = Form(...)):
     ok = database.delete_product_row(product_id)
+    # Regenerate catalog after deletion
+    try:
+        catalog_generator.regenerate_catalog()
+    except Exception as e:
+        print(f"[owner] Catalog regeneration failed: {e}")
     return {"ok": ok}
 
 
@@ -86,37 +97,12 @@ async def post_to_facebook(
     image: UploadFile = File(...),
     caption: str = Form(""),
 ):
-    """Post a product image + caption to the configured Facebook page."""
-    import config
-    from pathlib import Path
-    import requests as req
-
-    if not config.facebook_enabled():
-        return {"success": False, "message": "Facebook API credentials not configured."}
+    """Post a product image + caption — delegates to specialist agent."""
+    from specialist_agents.facebook import post_to_page
 
     contents = await image.read()
-    ext = os.path.splitext(image.filename or "fb_post")[1] or ".jpg"
-    save_dir = Path("uploads/facebook_posts")
-    save_dir.mkdir(parents=True, exist_ok=True)
-    import uuid
-    image_path = save_dir / f"fb_{uuid.uuid4().hex[:8]}{ext}"
-    image_path.write_bytes(contents)
-
-    url = (
-        f"https://graph.facebook.com/{config.FB_GRAPH_VERSION}/"
-        f"{config.FB_PAGE_ID}/photos"
+    return post_to_page(
+        image_bytes=contents,
+        caption=caption,
+        filename=image.filename or "post.jpg",
     )
-    try:
-        with open(image_path, "rb") as f:
-            resp = req.post(url, files={"source": f}, data={
-                "caption": caption, "published": "true",
-                "access_token": config.FB_PAGE_ACCESS_TOKEN,
-            }, timeout=60)
-
-        if resp.status_code == 200:
-            post_id = resp.json().get("id", "")
-            return {"success": True, "post_id": post_id, "message": "Posted to Facebook!"}
-        else:
-            return {"success": False, "message": f"Facebook API error: {resp.text[:200]}"}
-    except Exception as exc:
-        return {"success": False, "message": f"Facebook post failed: {str(exc)[:200]}"}

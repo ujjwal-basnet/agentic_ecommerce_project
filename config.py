@@ -18,6 +18,17 @@ TRYON_DIR = os.getenv("TRYON_DIR", "uploads/tryon_outputs")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "")
 FB_GRAPH_VERSION = os.getenv("FB_GRAPH_VERSION", "v24.0")
+FB_VERIFY_TOKEN = os.getenv("FB_VERIFY_TOKEN", "smartshop-webhook")
+
+# WhatsApp Business API
+WHATSAPP_API_TOKEN = os.getenv("WHATSAPP_API_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "smartshop-webhook")
+
+# Channel feature flags
+ENABLE_FB_MESSENGER = os.getenv("ENABLE_FB_MESSENGER", "false").lower() == "true"
+ENABLE_WHATSAPP = os.getenv("ENABLE_WHATSAPP", "false").lower() == "true"
+ENABLE_VOICE = os.getenv("ENABLE_VOICE", "true").lower() == "true"
 
 MCP_LOG_PATH = os.getenv("MCP_LOG_PATH", "logs/mcp_log.jsonl")
 
@@ -31,6 +42,10 @@ def openai_enabled() -> bool:
 
 def facebook_enabled() -> bool:
     return bool(FB_PAGE_ID and FB_PAGE_ID.strip() and FB_PAGE_ACCESS_TOKEN and FB_PAGE_ACCESS_TOKEN.strip())
+
+
+def whatsapp_enabled() -> bool:
+    return bool(WHATSAPP_API_TOKEN and WHATSAPP_API_TOKEN.strip() and WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_PHONE_NUMBER_ID.strip())
 
 
 # Ensure directories exist

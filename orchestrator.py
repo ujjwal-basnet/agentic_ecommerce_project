@@ -6,6 +6,8 @@ import config
 from llm import call_llm
 from log import log_event, log_plan
 
+from channels.capabilities import ChannelCapabilities, WEB_APP
+
 
 class Intent:
     SEARCH = "search"
@@ -91,8 +93,43 @@ Return ONLY the intent word in lowercase."""
     return resp if resp in Intent.ALL else Intent.UNKNOWN
 
 
-def build_plan(user_input: str, intent: str) -> list[dict[str, Any]]:
-    plan = _build_plan_inner(user_input, intent)
+def rewrite_query(user_input: str, context: str) -> str:
+    """If the query needs conversation context to make sense, rewrite it.
+    Clear queries like 'show me red tshirt' pass through unchanged."""
+    if not context or not config.openai_enabled():
+        return user_input
+    try:
+        system = (
+            "You are a query rewriter for an e-commerce search system.\n"
+            "Given the conversation history and the user's latest message:\n"
+            "- If the message is already clear and self-contained (e.g. 'show me red tshirt'), "
+            "return it EXACTLY as-is.\n"
+            "- If the message is vague or references earlier conversation "
+            "(e.g. 'that one', 'show me', 'which I can wear', 'the cheaper one'), "
+            "rewrite it into a clear, self-contained query using the conversation context.\n\n"
+            f"Conversation history:\n{context}\n\n"
+            "Output ONLY the final query. No quotes, no explanation. Under 10 words."
+        )
+        rewritten = call_llm(system, user_input, temperature=0).strip().strip('"\'')
+        if rewritten:
+            if rewritten.lower() != user_input.lower().strip():
+                log_event("query_rewritten", original=user_input[:200], rewritten=rewritten[:200])
+            return rewritten
+    except Exception:
+        pass
+    return user_input
+
+
+def build_plan(
+    user_input: str, 
+    intent: str, 
+    mcp: bool = False,
+    channel_caps: ChannelCapabilities = None,
+) -> list[dict[str, Any]]:
+    if channel_caps is None:
+        channel_caps = WEB_APP
+        
+    plan = _build_plan_inner(user_input, intent, mcp, channel_caps)
     if plan:
         log_plan("", plan[0].get("agent", ""), intent, len(plan))
     else:
@@ -100,15 +137,23 @@ def build_plan(user_input: str, intent: str) -> list[dict[str, Any]]:
     return plan
 
 
-def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
+def _build_plan_inner(
+    user_input: str, 
+    intent: str, 
+    mcp: bool = False,
+    channel_caps: ChannelCapabilities = None,
+) -> list[dict[str, Any]]:
+    if channel_caps is None:
+        channel_caps = WEB_APP
+        
     if intent == Intent.SEARCH:
         return [{"step": 1, "agent": "SearchAgent",
-                 "input": {"query": user_input, "filters": None}}]
+                 "input": {"query": user_input, "filters": None, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.CART:
         action = _infer_cart_action(user_input)
         inp: dict[str, Any] = {"action": action, "product_name": None,
-                                "price": None, "quantity": None}
+                                "price": None, "quantity": None, "mcp": mcp, "channel_caps": channel_caps}
         if action in ("add", "update", "remove"):
             inp["product_name"] = _extract_product_name(user_input)
             if action == "add":
@@ -117,26 +162,27 @@ def _build_plan_inner(user_input: str, intent: str) -> list[dict[str, Any]]:
 
     if intent == Intent.REC:
         return [{"step": 1, "agent": "RecommendAgent",
-                 "input": {"user_input": user_input}}]
+                 "input": {"user_input": user_input, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.WEATHER:
         loc = _extract_location(user_input) or "Kathmandu"
-        return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc}}]
+        return [{"step": 1, "agent": "WeatherAgent", "input": {"location": loc, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.TRYON:
+        product_name = _extract_product_name(user_input)
         return [{"step": 1, "agent": "TryOnAgent",
-                 "input": {"product_image_path": "", "user_image_path": None}}]
+                 "input": {"product_name": product_name, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.OWNER:
         action, params = _infer_owner_action(user_input)
         return [{"step": 1, "agent": "OwnerAgent",
-                 "input": {"action": action, "params": params}}]
+                 "input": {"action": action, "params": params, "mcp": mcp, "channel_caps": channel_caps}}]
 
     if intent == Intent.CHITCHAT:
         return []
 
     return [{"step": 1, "agent": "SearchAgent",
-             "input": {"query": user_input, "filters": None}}]
+             "input": {"query": user_input, "filters": None, "mcp": mcp, "channel_caps": channel_caps}}]
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

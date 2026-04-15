@@ -59,14 +59,6 @@ def update_from_message(session_id: str, message: str):
                 break
 
 
-def add_fact(session_id: str, fact: str):
-    """Add a fact about the user (e.g. from agent responses)."""
-    mem = _store[session_id]
-    mem["facts"].append(fact)
-    if len(mem["facts"]) > 20:
-        mem["facts"] = mem["facts"][-20:]
-
-
 def get_context_string(session_id: str, include_db_history: bool = True) -> str:
     """Build a context string for LLM prompts, including DB chat history."""
     mem = _store[session_id]

@@ -5,7 +5,6 @@ import CartDrawer from "./CartDrawer";
 import CartConfirmation from "./CartConfirmation";
 import RecommendGrid from "./RecommendGrid";
 import WeatherCard from "./WeatherCard";
-import TryOnResult from "./TryOnResult";
 
 export const REGISTRY: Record<string, React.ComponentType<any>> = {
   ProductList,
@@ -13,7 +12,6 @@ export const REGISTRY: Record<string, React.ComponentType<any>> = {
   CartConfirmation,
   RecommendGrid,
   WeatherCard,
-  TryOnResult,
 };
 
 export function renderGenUI(
@@ -22,8 +20,10 @@ export function renderGenUI(
   sessionId: string,
   onCartUpdate?: () => void,
   onSendMessage?: (msg: string) => void,
+  onOrderPlaced?: (orderResult: any) => void,
+  onTryOnResult?: (imagePath: string, productName: string) => void,
 ) {
   const Comp = REGISTRY[component];
   if (!Comp) return null;
-  return <Comp data={data} sessionId={sessionId} onCartUpdate={onCartUpdate} onSendMessage={onSendMessage} />;
+  return <Comp data={data} sessionId={sessionId} onCartUpdate={onCartUpdate} onSendMessage={onSendMessage} onOrderPlaced={onOrderPlaced} onTryOnResult={onTryOnResult} />;
 }

@@ -12,6 +12,8 @@ import database
 import session_memory
 from log import log_user_input, log_sse, log_direct_cart, log_event, log_render
 
+from channels.capabilities import WEB_APP, CHANNELS, get_renderer_mode
+
 router = APIRouter()
 
 
@@ -25,12 +27,13 @@ async def chat_stream(
     message: str = Form(),
     session_id: str = Form(),
     user_image_path: str | None = Form(None),
+    interface_mode: str = Form("web"),
 ):
     trace_id = str(uuid.uuid4())
 
     async def event_generator():
         try:
-            from orchestrator import classify_intent, build_plan
+            from orchestrator import classify_intent, build_plan, rewrite_query
             from executor import execute_plan
             from renderer import make_sse_events
 
@@ -40,9 +43,8 @@ async def chat_stream(
 
             user_context = session_memory.get_context_string(session_id)
             intent = classify_intent(message, user_context)
-            plan = build_plan(message, intent)
 
-            if not plan or intent == "chitchat":
+            if not intent or intent == "chitchat":
                 text = _chitchat_reply(message, session_id)
                 log_event("chitchat_response", session_id=session_id, intent=intent, response=text[:300])
                 yield {
@@ -61,12 +63,20 @@ async def chat_stream(
                 log_sse(session_id, "text")
                 return
 
+            # Resolve channel capabilities from interface_mode
+            channel_caps = CHANNELS.get(interface_mode, WEB_APP)
+            renderer_mode = get_renderer_mode(channel_caps)
+
+            query = rewrite_query(message, user_context)
+            plan = build_plan(query, intent, channel_caps=channel_caps)
+
             result = execute_plan(
                 plan=plan,
                 session_id=session_id,
                 user_input=message,
                 user_image_path=user_image_path,
                 trace_id=trace_id,
+                channel_caps=channel_caps,
             )
 
             log_render(session_id, result.get("tool", ""), result.get("component"))
@@ -75,7 +85,7 @@ async def chat_stream(
                       steps=result.get("steps"), elapsed=result.get("elapsed"),
                       text=str(result.get("text", ""))[:300])
 
-            for evt in make_sse_events(result, intent):
+            for evt in make_sse_events(result, intent, mode=renderer_mode):
                 yield evt
                 log_sse(session_id, "tool_result", result.get("component"))
 

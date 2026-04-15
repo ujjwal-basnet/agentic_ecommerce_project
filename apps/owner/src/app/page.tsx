@@ -5,7 +5,7 @@ import {
   BarChart3, Package, DollarSign, Users, TrendingUp,
   Plus, Trash2, RefreshCw, AlertTriangle,
 } from "lucide-react";
-import { fetchAnalytics, fetchProducts, addProduct, deleteProduct, postToFacebook } from "@/lib/api";
+import { fetchAnalytics, fetchProducts, addProduct, deleteProduct, postToFacebook, imageUrl } from "@/lib/api";
 
 interface Stats {
   total_products: number;
@@ -292,6 +292,7 @@ export default function OwnerDashboard() {
                 <thead>
                   <tr className="text-left text-gray-500 bg-gray-50">
                     <th className="px-5 py-2.5 font-medium">ID</th>
+                    <th className="px-5 py-2.5 font-medium">Image</th>
                     <th className="px-5 py-2.5 font-medium">Name</th>
                     <th className="px-5 py-2.5 font-medium">Category</th>
                     <th className="px-5 py-2.5 font-medium">Color</th>
@@ -304,6 +305,13 @@ export default function OwnerDashboard() {
                   {products.map((p: any) => (
                     <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                       <td className="px-5 py-3 text-gray-400">{p.id}</td>
+                      <td className="px-5 py-3">
+                        {p.image_path ? (
+                          <img src={imageUrl(p.image_path)} alt={p.name} className="w-10 h-10 rounded-md object-cover bg-gray-100" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-md bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No img</div>
+                        )}
+                      </td>
                       <td className="px-5 py-3 font-medium">{p.name}</td>
                       <td className="px-5 py-3">{p.category}</td>
                       <td className="px-5 py-3">{p.color}</td>

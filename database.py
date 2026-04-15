@@ -274,8 +274,8 @@ def db_get_cart(sid: str) -> list[dict]:
 def db_remove_from_cart(sid: str, product_name: str):
     conn = get_conn()
     conn.execute(
-        "DELETE FROM cart_items WHERE session_id=? AND LOWER(product_name) LIKE LOWER(?)",
-        (sid, f"%{product_name}%"),
+        "DELETE FROM cart_items WHERE session_id=? AND LOWER(product_name) = LOWER(?)",
+        (sid, product_name),
     )
     conn.commit()
     conn.close()

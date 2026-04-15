@@ -6,11 +6,13 @@ export async function fetchSSE(
   userImagePath: string | null,
   onEvent: (data: any) => void,
   onDone: () => void,
-  onError: (err: string) => void
+  onError: (err: string) => void,
+  interfaceMode: string = "web",
 ) {
   const body = new FormData();
   body.append("message", message);
   body.append("session_id", sessionId);
+  body.append("interface_mode", interfaceMode);
   if (userImagePath) body.append("user_image_path", userImagePath);
 
   try {
@@ -96,6 +98,14 @@ export async function checkout(sessionId: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
   const res = await fetch(`${API}/api/checkout`, { method: "POST", body });
+  return res.json();
+}
+
+export async function tryOnProduct(productId: number, photo: File): Promise<any> {
+  const body = new FormData();
+  body.append("product_id", String(productId));
+  body.append("photo", photo);
+  const res = await fetch(`${API}/specialist/tryon`, { method: "POST", body });
   return res.json();
 }
 

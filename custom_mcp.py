@@ -59,10 +59,14 @@ class AgentRegistry:
         if not handler:
             raise ValueError(f"'{agent_name}' not found. Have: {list(self._agents)}")
 
-        def tracked(msg: dict) -> dict:
+        def tracked(msg: dict, **kwargs) -> dict:
             t = time.time()
             try:
-                result = handler(msg, llm=llm) if llm else handler(msg)
+                call_kwargs = {}
+                if llm:
+                    call_kwargs["llm"] = llm
+                call_kwargs.update(kwargs)
+                result = handler(msg, **call_kwargs)
             except Exception as e:
                 result = create_mcp_message(
                     agent_name,
@@ -110,4 +114,5 @@ def get_registry() -> AgentRegistry:
     _registry.register("RecommendAgent", _load("recommend", "RecommendAgent"))
     _registry.register("WeatherAgent", _load("weather", "WeatherAgent"))
     _registry.register("OwnerAgent", _load("owner", "OwnerAgent"))
+    _registry.register("TryOnAgent", _load("tryon", "TryOnAgent"))
     return _registry

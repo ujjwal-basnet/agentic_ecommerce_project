@@ -2,16 +2,24 @@
 
 import requests
 from pathlib import Path
-from mcp import create_mcp_message
+from custom_mcp import create_mcp_message
 import database
 import config
+from channels.capabilities import (
+    ChannelCapabilities,
+    ChannelFeatures,
+    WEB_APP,
+    truncate_text,
+)
 
 
 class OwnerAgent:
     def __init__(self):
         self._last_tool = None
 
-    def handle(self, msg: dict, **kw) -> dict:
+    def handle(self, msg: dict, channel_caps: ChannelCapabilities = None, **kw) -> dict:
+        if channel_caps is None:
+            channel_caps = WEB_APP
         content = msg.get("content", {})
         action = content.get("action", "analytics")
         params = content.get("params", {})

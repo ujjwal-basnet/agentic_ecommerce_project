@@ -3,6 +3,7 @@
 import { Minus, Plus } from "lucide-react";
 import { addToCartDirect, updateCartDirect, removeCartDirect, imageUrl } from "@/lib/api";
 import { useState } from "react";
+import TryOnModal from "./TryOnModal";
 
 interface Product {
   id: number;
@@ -21,15 +22,18 @@ export default function ProductList({
   sessionId,
   onCartUpdate,
   onSendMessage,
+  onTryOnResult,
 }: {
   data: Product[];
   sessionId: string;
   onCartUpdate?: () => void;
   onSendMessage?: (msg: string) => void;
+  onTryOnResult?: (imagePath: string, productName: string) => void;
 }) {
   const products = Array.isArray(data) ? data : [];
   const [qtys, setQtys] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState<number | null>(null);
+  const [tryOnProduct, setTryOnProduct] = useState<Product | null>(null);
 
   async function handleIncrement(p: Product) {
     setBusy(p.id);
@@ -72,10 +76,15 @@ export default function ProductList({
     );
   }
 
+  const tryOnModal = tryOnProduct ? (
+    <TryOnModal product={tryOnProduct} onClose={() => setTryOnProduct(null)} onTryOnResult={onTryOnResult} />
+  ) : null;
+
   const useCards = products.length <= 3;
 
   if (useCards) {
     return (
+      <>{tryOnModal}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((p) => {
           const qty = qtys[p.id] || 0;
@@ -89,7 +98,7 @@ export default function ProductList({
                 )}
                 {p.is_wearable && (
                   <button
-                    onClick={() => onSendMessage?.(`try on ${p.name}`)}
+                    onClick={() => setTryOnProduct(p)}
                     className="absolute top-3 left-3 bg-primary/90 text-on-primary text-[10px] font-label uppercase tracking-widest px-3 py-1.5 rounded-full hover:bg-primary transition-colors shadow-md"
                   >
                     Try On
@@ -132,10 +141,12 @@ export default function ProductList({
           );
         })}
       </div>
+      </>
     );
   }
 
   return (
+    <>{tryOnModal}
     <div className="bg-surface-container-lowest rounded-2xl p-6 md:p-8 shadow-sm border border-outline-variant/10">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-1">
         {[products.slice(0, Math.ceil(products.length / 2)), products.slice(Math.ceil(products.length / 2))].map((col, ci) => (
@@ -152,7 +163,7 @@ export default function ProductList({
                     )}
                     {p.is_wearable && (
                       <button
-                        onClick={() => onSendMessage?.(`try on ${p.name}`)}
+                        onClick={() => setTryOnProduct(p)}
                         className="absolute bottom-1 left-1 bg-primary/90 text-on-primary text-[8px] font-label uppercase tracking-widest px-2 py-1 rounded-full hover:bg-primary transition-colors shadow-md font-bold"
                       >
                         Try On
@@ -181,5 +192,6 @@ export default function ProductList({
         ))}
       </div>
     </div>
+    </>
   );
 }

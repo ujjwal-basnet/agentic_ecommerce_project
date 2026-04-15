@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Paperclip, ShoppingBag, Trash2 } from "lucide-react";
-import { fetchSSE, fetchCart, clearChat, uploadPhoto } from "@/lib/api";
+import { fetchSSE, fetchCart, clearChat, uploadPhoto, imageUrl } from "@/lib/api";
 import { renderGenUI } from "@/components/genui/Registry";
 
 interface Message {
@@ -13,6 +13,7 @@ interface Message {
   data?: any;
   tool?: string;
   ts?: string;
+  image_path?: string;
 }
 
 function genId() {
@@ -56,6 +57,20 @@ export default function Home() {
 
   useEffect(() => { refreshCart(); }, [refreshCart]);
 
+  const updateMessageData = useCallback((msgId: string, patch: any) => {
+    setMessages((prev) => prev.map((m) =>
+      m.id === msgId ? { ...m, data: { ...(typeof m.data === 'object' && m.data ? m.data : {}), ...patch } } : m
+    ));
+  }, []);
+
+  const handleTryOnResult = useCallback((imagePath: string, productName: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: genId(), role: "assistant", text: `Here's how ${productName} looks on you!`, image_path: imagePath, ts: timeNow() },
+    ]);
+    scrollToBottom();
+  }, [scrollToBottom]);
+
   const sendMessage = useCallback(async (msg: string) => {
     if (!msg.trim() || loading) return;
     const userMsg: Message = { id: genId(), role: "user", text: msg, ts: timeNow() };
@@ -83,6 +98,12 @@ export default function Home() {
           setMessages((prev) => [
             ...prev,
             { id: genId(), role: "assistant", component: event.component, data: event.data, tool: event.tool, ts: timeNow() },
+          ]);
+          scrollToBottom();
+        } else if (event.type === "image") {
+          setMessages((prev) => [
+            ...prev,
+            { id: genId(), role: "assistant", image_path: event.image_path, ts: timeNow() },
           ]);
           scrollToBottom();
         } else if (event.type === "cart_sync") {
@@ -132,7 +153,6 @@ export default function Home() {
           <nav className="hidden md:flex items-center space-x-8 font-headline font-medium tracking-tight text-sm">
             <a className="text-on-surface border-b border-on-surface pb-1" href="#">Chat</a>
             <a className="text-outline hover:text-on-surface transition-colors" href="#">Collections</a>
-            <a className="text-outline hover:text-on-surface transition-colors" href="#">Artisans</a>
           </nav>
           <div className="flex items-center space-x-3">
             <button onClick={handleClear} className="p-2 text-on-surface-variant hover:text-on-surface transition-colors active:scale-95" title="Clear chat">
@@ -167,7 +187,7 @@ export default function Home() {
               {["Show me red shirts", "Recommend something", "Weather in Kathmandu", "View my cart"].map((q) => (
                 <button
                   key={q}
-                  onClick={() => { setInput(q); inputRef.current?.focus(); }}
+                  onClick={() => { sendMessage(q); }}
                   className="font-headline text-xs tracking-tight px-4 py-2.5 rounded-full bg-surface-container-lowest border border-outline-variant/10 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/30 transition-all shadow-sm"
                 >
                   {q}
@@ -194,9 +214,18 @@ export default function Home() {
                     {msg.text}
                   </div>
                 )}
+                {msg.image_path && (
+                  <div className="max-w-[85%]">
+                    <img
+                      src={imageUrl(msg.image_path)}
+                      alt="Try-On Result"
+                      className="rounded-xl shadow-sm border border-outline-variant/10 max-h-[400px] object-contain"
+                    />
+                  </div>
+                )}
                 {msg.component && (
                   <div className="w-full">
-                    {renderGenUI(msg.component, msg.data, sessionId.current, refreshCart, sendMessage)}
+                    {renderGenUI(msg.component, msg.data, sessionId.current, refreshCart, sendMessage, (orderResult: any) => updateMessageData(msg.id, { __orderDone: orderResult }), handleTryOnResult)}
                   </div>
                 )}
                 <div className="flex items-center space-x-2 px-1">

@@ -46,11 +46,6 @@ def log_error(session_id, agent, error, attempt):
               error=str(error)[:300], attempt=attempt)
 
 
-def log_error_fatal(session_id, agent, user_message):
-    log_event("agent_error_fatal", session_id=session_id,
-              agent=agent, user_message=user_message)
-
-
 def log_direct_cart(session_id, product_name, action="add"):
     log_event("direct_cart_add", session_id=session_id,
               product_name=product_name, action=action)
