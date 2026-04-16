@@ -1,23 +1,31 @@
-"""Customer-facing API routes — chat SSE, cart direct, upload photo."""
+"""Customer-facing API routes — chat SSE, cart, upload, orders."""
 
 from __future__ import annotations
 import json
-import uuid
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form
 from sse_starlette.sse import EventSourceResponse
 
 import database
+import engine
 import session_memory
-from log import log_user_input, log_sse, log_direct_cart, log_event, log_render
-
-from channels.capabilities import WEB_APP, CHANNELS, get_renderer_mode
+from schemas import (
+    CartActionResponse,
+    CartResponse,
+    CheckoutResponse,
+    ClearChatResponse,
+    HealthResponse,
+    OrdersResponse,
+    UploadPhotoResponse,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-@router.get("/api/health")
+@router.get("/api/health", response_model=HealthResponse)
 async def health():
     return {"status": "ok"}
 
@@ -29,100 +37,84 @@ async def chat_stream(
     user_image_path: str | None = Form(None),
     interface_mode: str = Form("web"),
 ):
-    trace_id = str(uuid.uuid4())
-
     async def event_generator():
         try:
-            from orchestrator import classify_intent, build_plan, rewrite_query
-            from executor import execute_plan
-            from renderer import make_sse_events
-
             database.ensure_session(session_id)
-            session_memory.update_from_message(session_id, message)
-            log_user_input(session_id, message)
+            channel = "web" if interface_mode == "web" else "text"
 
-            user_context = session_memory.get_context_string(session_id)
-            intent = classify_intent(message, user_context)
+            result = await engine.run(
+                message,
+                channel=channel,
+                session_id=session_id,
+                user_image_path=user_image_path,
+            )
 
-            if not intent or intent == "chitchat":
-                text = _chitchat_reply(message, session_id)
-                log_event("chitchat_response", session_id=session_id, intent=intent, response=text[:300])
+            # Text response
+            text = result.get("text", "")
+            if text:
                 yield {
                     "event": "message",
                     "data": json.dumps({"type": "text", "content": text}),
                 }
+
+            # UI component (web only)
+            component = result.get("component")
+            if component and channel == "web":
+                data = result.get("data", {})
+                component_data = data
+                if component in {"ProductList", "RecommendGrid"}:
+                    component_data = result.get("products") or data.get("products", [])
                 yield {
                     "event": "message",
                     "data": json.dumps({
-                        "type": "cart_sync",
-                        "cart_count": database.cart_count(session_id),
+                        "type": "tool_result",
+                        "tool": component,
+                        "component": component,
+                        "data": component_data,
+                        "products": result.get("products") or data.get("products", []),
                     }),
                 }
-                database.save_message(session_id, "user", message)
-                database.save_message(session_id, "assistant", text)
-                log_sse(session_id, "text")
-                return
 
-            # Resolve channel capabilities from interface_mode
-            channel_caps = CHANNELS.get(interface_mode, WEB_APP)
-            renderer_mode = get_renderer_mode(channel_caps)
-
-            query = rewrite_query(message, user_context)
-            plan = build_plan(query, intent, channel_caps=channel_caps)
-
-            result = execute_plan(
-                plan=plan,
-                session_id=session_id,
-                user_input=message,
-                user_image_path=user_image_path,
-                trace_id=trace_id,
-                channel_caps=channel_caps,
-            )
-
-            log_render(session_id, result.get("tool", ""), result.get("component"))
-            log_event("pipeline_complete", session_id=session_id, intent=intent,
-                      tool=result.get("tool"), component=result.get("component"),
-                      steps=result.get("steps"), elapsed=result.get("elapsed"),
-                      text=str(result.get("text", ""))[:300])
-
-            for evt in make_sse_events(result, intent, mode=renderer_mode):
-                yield evt
-                log_sse(session_id, "tool_result", result.get("component"))
-
-        except Exception as exc:
-            import traceback
-            traceback.print_exc()
-            log_event("chat_error", session_id=session_id, error=str(exc)[:300])
+            # Cart sync
             yield {
                 "event": "message",
-                "data": json.dumps({"type": "text", "content": f"Something went wrong: {exc}"}),
+                "data": json.dumps({
+                    "type": "cart_sync",
+                    "cart_count": result.get("cart_count", 0),
+                }),
             }
+
+        except Exception as exc:
+            logger.exception("chat_stream failed session=%s message=%r", session_id, message)
+            yield {
+                "event": "error",
+                "data": json.dumps({"type": "error", "content": f"Something went wrong: {exc}"}),
+            }
+            raise
 
     return EventSourceResponse(event_generator())
 
 
-@router.post("/upload-photo")
+@router.post("/upload-photo", response_model=UploadPhotoResponse)
 async def upload_photo(
     photo: UploadFile = File(...),
     session_id: str = Form(),
 ):
     contents = await photo.read()
-    filename = photo.filename or "upload.jpg"
-    ext = Path(filename).suffix or ".jpg"
+    ext = Path(photo.filename or "upload.jpg").suffix or ".jpg"
     path = database.save_user_image(contents, session_id, ext)
     return {"path": path, "session_id": session_id}
 
 
-@router.get("/api/cart")
+@router.get("/api/cart", response_model=CartResponse)
 async def get_cart(session_id: str):
     database.ensure_session(session_id)
     cart = database.db_get_cart(session_id)
-    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-    count = sum(int(i.get("quantity", 0)) for i in cart)
+    count, total = database.cart_totals(cart)
     return {"items": cart, "count": count, "total": total}
 
 
-@router.post("/api/cart/add")
+@router.post("/api/cart/add", response_model=CartActionResponse)
 async def add_to_cart_direct(
     session_id: str = Form(...),
     product_name: str = Form(...),
@@ -131,10 +123,8 @@ async def add_to_cart_direct(
 ):
     database.ensure_session(session_id)
     database.db_add_to_cart(session_id, product_name, float(price), int(quantity))
-    log_direct_cart(session_id, product_name, "add")
     cart = database.db_get_cart(session_id)
-    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-    count = sum(int(i.get("quantity", 0)) for i in cart)
+    count, total = database.cart_totals(cart)
     return {
         "success": True,
         "message": f"Added {quantity} x {product_name} to cart",
@@ -143,7 +133,7 @@ async def add_to_cart_direct(
     }
 
 
-@router.post("/api/cart/update")
+@router.post("/api/cart/update", response_model=CartActionResponse)
 async def update_cart_item(
     session_id: str = Form(...),
     product_name: str = Form(...),
@@ -152,12 +142,11 @@ async def update_cart_item(
     database.ensure_session(session_id)
     database.db_update_cart_quantity(session_id, product_name, quantity)
     cart = database.db_get_cart(session_id)
-    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-    count = sum(int(i.get("quantity", 0)) for i in cart)
+    count, total = database.cart_totals(cart)
     return {"success": True, "cart_total_items": count, "cart_total_price": total}
 
 
-@router.post("/api/cart/remove")
+@router.post("/api/cart/remove", response_model=CartActionResponse)
 async def remove_from_cart(
     session_id: str = Form(...),
     product_name: str = Form(...),
@@ -165,19 +154,17 @@ async def remove_from_cart(
     database.ensure_session(session_id)
     database.db_remove_from_cart(session_id, product_name)
     cart = database.db_get_cart(session_id)
-    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-    count = sum(int(i.get("quantity", 0)) for i in cart)
+    count, total = database.cart_totals(cart)
     return {"success": True, "cart_total_items": count, "cart_total_price": total}
 
 
-@router.post("/api/checkout")
+@router.post("/api/checkout", response_model=CheckoutResponse)
 async def checkout(session_id: str = Form(...)):
     database.ensure_session(session_id)
     cart = database.db_get_cart(session_id)
     if not cart:
-        return {"success": False, "message": "Cart is empty"}
-    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
-    count = sum(int(i.get("quantity", 0)) for i in cart)
+        return {"success": False, "message": "Cart is empty", "order_ids": [], "total": 0, "item_count": 0}
+    count, total = database.cart_totals(cart)
     order_ids = database.place_order(session_id)
     return {
         "success": True,
@@ -188,35 +175,20 @@ async def checkout(session_id: str = Form(...)):
     }
 
 
-@router.post("/clear-chat")
+@router.get("/api/orders", response_model=OrdersResponse)
+async def get_orders(session_id: str):
+    database.ensure_session(session_id)
+    orders = database.get_orders_by_session(session_id)
+    stats = database.get_order_stats_by_session(session_id)
+    return {
+        "orders": orders,
+        "total_orders": stats["total_orders"],
+        "total_spent": round(stats["total_spent"], 2),
+    }
+
+
+@router.post("/clear-chat", response_model=ClearChatResponse)
 async def clear_chat(session_id: str = Form()):
     database.clear_history(session_id)
     session_memory.clear_memory(session_id)
     return {"ok": True}
-
-
-def _chitchat_reply(message: str, session_id: str = "") -> str:
-    try:
-        from llm import call_llm
-        context = ""
-        if session_id:
-            context = session_memory.get_context_string(session_id)
-        system = (
-            "You are a friendly e-commerce shopping assistant for SmartShop. "
-            "Greet warmly, keep it short. You help find products, manage cart, "
-            "get recommendations, and virtual try-on."
-        )
-        if context:
-            system += f"\n\nHere is what you know about this customer:\n{context}\nUse this context to personalize your response (e.g. greet them by name if known)."
-        return call_llm(system, message, temperature=0.7)
-    except Exception:
-        m = message.lower().strip()
-        replies = {
-            "hi": "Hello! What are you shopping for today?",
-            "hello": "Hi there! How can I help you find something?",
-            "hey": "Hey! What can I help you with?",
-            "namaste": "Namaste! Welcome to SmartShop. What are you looking for?",
-            "how are you": "I'm great! Ready to help you shop. What are you looking for?",
-        }
-        return next((v for k, v in replies.items() if k in m),
-                     "Happy to help! Search for products or ask for recommendations.")

@@ -1,16 +1,22 @@
 """Owner dashboard API routes — analytics, products CRUD, facebook."""
 
 from __future__ import annotations
-import json
 import os
 from fastapi import APIRouter, UploadFile, File, Form
 import database
-import catalog_generator
+from schemas import (
+    AnalyticsResponse,
+    ProductCreateResponse,
+    ProductDeleteResponse,
+    ProductSchema,
+    ProductUpdateResponse,
+    SocialPostResponse,
+)
 
 router = APIRouter(prefix="/owner")
 
 
-@router.get("/analytics")
+@router.get("/analytics", response_model=AnalyticsResponse)
 async def get_analytics(days: int = 30):
     stats = database.get_summary_stats()
     revenue = database.get_revenue_by_day(days)
@@ -24,12 +30,12 @@ async def get_analytics(days: int = 30):
     }
 
 
-@router.get("/products")
+@router.get("/products", response_model=list[ProductSchema])
 async def list_products():
     return database.get_all_products()
 
 
-@router.post("/products/new")
+@router.post("/products/new", response_model=ProductCreateResponse)
 async def new_product(
     name: str = Form(),
     category: str = Form(),
@@ -51,26 +57,16 @@ async def new_product(
         description=description, quantity=quantity,
         image_path=image_path, tags="[]", is_wearable=int(is_wearable),
     )
-    # Enrich description via LLM and regenerate catalog
-    try:
-        catalog_generator.enrich_and_regenerate(pid)
-    except Exception as e:
-        print(f"[owner] Catalog enrichment failed: {e}")
     return {"success": True, "product_id": pid}
 
 
-@router.post("/products/delete")
+@router.post("/products/delete", response_model=ProductDeleteResponse)
 async def delete_product(product_id: int = Form(...)):
     ok = database.delete_product_row(product_id)
-    # Regenerate catalog after deletion
-    try:
-        catalog_generator.regenerate_catalog()
-    except Exception as e:
-        print(f"[owner] Catalog regeneration failed: {e}")
     return {"ok": ok}
 
 
-@router.post("/products/update")
+@router.post("/products/update", response_model=ProductUpdateResponse)
 async def update_product(
     product_id: int = Form(...),
     name: str = Form(None),
@@ -92,17 +88,10 @@ async def update_product(
     return {"success": True}
 
 
-@router.post("/facebook/post")
+@router.post("/facebook/post", response_model=SocialPostResponse)
 async def post_to_facebook(
     image: UploadFile = File(...),
     caption: str = Form(""),
 ):
     """Post a product image + caption — delegates to specialist agent."""
-    from specialist_agents.facebook import post_to_page
-
-    contents = await image.read()
-    return post_to_page(
-        image_bytes=contents,
-        caption=caption,
-        filename=image.filename or "post.jpg",
-    )
+    raise RuntimeError("Facebook image upload posting is not wired. Use /api/facebook/post with image_url.")
