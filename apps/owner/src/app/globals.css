@@ -4,6 +4,13 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    background-color: #f8f9fa;
+    color: #2b3437;
+    font-family: var(--font-inter), 'Inter', sans-serif;
   }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }

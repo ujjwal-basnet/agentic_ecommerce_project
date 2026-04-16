@@ -22,6 +22,11 @@ export async function addProduct(form: FormData) {
   return res.json();
 }
 
+export async function updateProduct(form: FormData) {
+  const res = await fetch(`${API}/owner/products/update`, { method: "POST", body: form });
+  return res.json();
+}
+
 export async function deleteProduct(productId: number) {
   const body = new FormData();
   body.append("product_id", String(productId));
