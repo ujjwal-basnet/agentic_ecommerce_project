@@ -4,18 +4,27 @@ import json
 import sqlite3
 import datetime
 import random
+import logging
+import threading
 from pathlib import Path
 import config
 
 DB_PATH = Path(config.DB_PATH)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+logger = logging.getLogger(__name__)
+
+_local = threading.local()
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    """Return a thread-local persistent connection."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.conn = conn
     return conn
 
 
@@ -113,52 +122,79 @@ CREATE TABLE IF NOT EXISTS product_views (
 );
 CREATE INDEX IF NOT EXISTS idx_views_product ON product_views(product_id);
 """
+_REQUIRED_TABLES = {
+    "products",
+    "users",
+    "sessions",
+    "chat_history",
+    "cart_items",
+    "wishlists",
+    "orders",
+    "product_views",
+}
 
-_IMAGES = Path(config.DB_IMAGES_DIR)
+_IMAGES = Path(config.PRODUCT_IMAGES_DIR)
 
-_SEED_PRODUCTS = [
-    ("Red T-Shirt", "tshirt", "red", 20.00, "Classic red cotton crew-neck t-shirt.", 15,
-     str(_IMAGES / "red_tshirt.jpg"), '["red","tshirt","cotton","casual"]', 1),
-    ("Blue T-Shirt", "tshirt", "blue", 22.00, "Navy blue regular-fit cotton t-shirt.", 12,
-     str(_IMAGES / "blue_tshirt.jpeg"), '["blue","navy","tshirt","cotton"]', 1),
-    ("Black T-Shirt", "tshirt", "black", 25.00, "Black casual t-shirt for everyday wear.", 6,
-     str(_IMAGES / "black-tshirtfdas.jpg"), '["black","tshirt","casual"]', 1),
-    ("Black Midi Dress", "dress", "black", 75.00, "Sleek black midi dress for evenings.", 6,
-     str(_IMAGES / "dress_black.png"), '["black","dress","midi","evening"]', 1),
-    ("Denim Jacket", "jacket", "blue", 90.00, "Classic blue denim jacket, slim fit.", 4,
-     str(_IMAGES / "jacket_denim.png"), '["blue","denim","jacket","outerwear"]', 1),
-    ("Sunglasses", "accessories", "black", 25.00, "Stylish black sunglasses.", 20,
-     str(_IMAGES / "sunnglasses.avif"), '["black","sunglasses","accessories"]', 0),
-    ("Red Saree", "sari", "red", 1500.00, "Traditional red silk saree for weddings.", 8,
-     str(_IMAGES / "red_saree.jpg"), '["red","saree","sari","silk","wedding"]', 1),
-    ("Blue Saree", "sari", "blue", 1800.00, "Royal blue chiffon saree.", 5,
-     str(_IMAGES / "blue_saree.jpg"), '["blue","saree","sari","chiffon"]', 1),
-    ("Black Kurta", "kurti", "black", 45.00, "Black cotton kurta for men.", 10,
-     str(_IMAGES / "black_kurta.jpg"), '["black","kurta","kurti","cotton","ethnic"]', 1),
-    ("White Dress", "dress", "white", 65.00, "Elegant white summer dress.", 7,
-     str(_IMAGES / "white_dress.jpg"), '["white","dress","summer","elegant"]', 1),
-]
+_CATEGORIES = {
+    "laptop": ("laptops", 0, 49999), "nitro": ("laptops", 0, 89999), "loq": ("laptops", 0, 69999),
+    "latitude": ("laptops", 0, 45999), "speaker": ("electronics", 0, 3999),
+    "soundbox": ("electronics", 0, 3499), "thunder": ("electronics", 0, 7999),
+    "camera": ("electronics", 0, 2499), "cctv": ("electronics", 0, 2499),
+    "bag": ("bags", 0, 999), "backpack": ("bags", 0, 1299),
+    "sunglasses": ("accessories", 0, 599), "wayfarer": ("accessories", 0, 599),
+    "kurti": ("kurti", 1, 1499), "kurta": ("kurti", 1, 1299),
+    "jeans": ("jeans", 1, 1799), "denim": ("jeans", 1, 1799),
+    "shirt": ("shirt", 1, 1299), "tshirt": ("tshirt", 1, 899), "tee": ("tshirt", 1, 799),
+    "jacket": ("outerwear", 1, 2499), "dress": ("dress", 1, 1999),
+}
+_COLORS = ["red","blue","green","black","white","yellow","pink","purple",
+           "orange","grey","gray","brown","navy","royal","maroon","beige"]
+
+
+def _filename_to_product(image_path: Path) -> tuple:
+    stem = image_path.stem.replace(".jpg", "")
+    tokens = stem.replace("_", " ").replace("-", " ").lower().split()
+    name = " ".join(w.capitalize() for w in tokens)
+
+    category, is_wearable, price = "general", 0, 999
+    for tok in tokens:
+        if tok in _CATEGORIES:
+            category, is_wearable, price = _CATEGORIES[tok]
+            break
+
+    color = next((t for t in tokens if t in _COLORS), "black")
+    tags = json.dumps(list(dict.fromkeys(tokens)))  # preserve order, dedupe
+
+    return (name, category, color, float(price), name, random.randint(5, 20),
+            str(image_path), tags, is_wearable)
+
+
+def _build_seed_products() -> list[tuple]:
+    """Scan PRODUCT_IMAGES_DIR and return a seed row for every image found."""
+    products = []
+    image_dir = Path(config.PRODUCT_IMAGES_DIR)
+    if not image_dir.exists():
+        return products
+    for img in sorted(image_dir.iterdir()):
+        if img.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+            products.append(_filename_to_product(img))
+    return products
 
 
 def _seed_orders(conn):
     conn.execute("INSERT OR IGNORE INTO sessions (id) VALUES ('demo')")
-    items = [
-        (1, "Red T-Shirt", "tshirt", 20.0),
-        (2, "Blue T-Shirt", "tshirt", 22.0),
-        (3, "Black T-Shirt", "tshirt", 25.0),
-        (4, "Black Midi Dress", "dress", 75.0),
-        (5, "Denim Jacket", "jacket", 90.0),
-        (6, "Sunglasses", "accessories", 25.0),
-    ]
+    rows = conn.execute("SELECT id, name, category, price FROM products LIMIT 20").fetchall()
+    if not rows:
+        return
     for _ in range(50):
-        pid, pname, cat, price = random.choice(items)
+        row = random.choice(rows)
         qty = random.randint(1, 3)
         days = random.randint(0, 60)
         ts = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "INSERT INTO orders (session_id,product_id,product_name,category,price,quantity,status,created_at) "
             "VALUES ('demo',?,?,?,?,?,'delivered',?)",
-            (pid, pname, cat, price, qty, ts),
+            (row["id"], row["name"], row["category"], row["price"], qty, ts),
         )
 
 
@@ -166,36 +202,49 @@ def init_db():
     conn = get_conn()
     conn.executescript(_SCHEMA)
     conn.commit()
-    try:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(products)").fetchall()]
-        if "is_wearable" not in cols:
-            conn.execute("ALTER TABLE products ADD COLUMN is_wearable INTEGER DEFAULT 0")
-            conn.commit()
-    except Exception:
-        pass
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(products)").fetchall()]
+    if "is_wearable" not in cols:
+        conn.execute("ALTER TABLE products ADD COLUMN is_wearable INTEGER DEFAULT 0")
+        conn.commit()
     if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0:
-        conn.executemany(
-            "INSERT INTO products (name,category,color,price,description,quantity,image_path,tags,is_wearable) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            _SEED_PRODUCTS,
-        )
-        print(f"[db] Seeded {len(_SEED_PRODUCTS)} products.")
+        seed_products = _build_seed_products()
+        if seed_products:
+            conn.executemany(
+                "INSERT INTO products (name,category,color,price,description,quantity,image_path,tags,is_wearable) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                seed_products,
+            )
+            logger.info("Seeded %d products from %s", len(seed_products), config.PRODUCT_IMAGES_DIR)
     if conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0:
         _seed_orders(conn)
-        print("[db] Seeded 50 demo orders.")
+        logger.info("Seeded 50 demo orders")
     conn.commit()
-    conn.close()
-    print(f"[db] Ready → {DB_PATH}")
+    _validate_schema(conn)
+    logger.info("Database ready: %s", DB_PATH)
+
+
+def _validate_schema(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    tables = {row["name"] for row in rows}
+    missing = sorted(_REQUIRED_TABLES - tables)
+    if missing:
+        raise RuntimeError(f"Database initialization missing tables: {missing}")
+
+
+def startup() -> None:
+    """Open and validate the SQLite database during FastAPI startup."""
+    init_db()
 
 
 # ── Session ─────────────────────────────────────────────────────────────────
 
 def ensure_session(sid: str):
+    if not sid or not sid.strip():
+        raise ValueError("session_id is required")
     conn = get_conn()
     conn.execute("INSERT OR IGNORE INTO sessions (id) VALUES (?)", (sid,))
     conn.execute("UPDATE sessions SET last_active=CURRENT_TIMESTAMP WHERE id=?", (sid,))
     conn.commit()
-    conn.close()
 
 
 # ── Chat history ────────────────────────────────────────────────────────────
@@ -208,16 +257,14 @@ def save_message(sid: str, role: str, content: str, tool_name: str = None):
         (sid, role, content, tool_name),
     )
     conn.commit()
-    conn.close()
 
 
 def load_history(sid: str, limit: int = 20) -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
-        "SELECT role,content,tool_name FROM chat_history WHERE session_id=? ORDER BY id DESC LIMIT ?",
+        "SELECT role,content,tool_name,created_at as timestamp FROM chat_history WHERE session_id=? ORDER BY id DESC LIMIT ?",
         (sid, limit),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in reversed(rows)]
 
 
@@ -225,7 +272,6 @@ def clear_history(sid: str):
     conn = get_conn()
     conn.execute("DELETE FROM chat_history WHERE session_id=?", (sid,))
     conn.commit()
-    conn.close()
 
 
 # ── Cart ────────────────────────────────────────────────────────────────────
@@ -251,7 +297,6 @@ def db_add_to_cart(sid, product_name, price, quantity=1, product_id=None):
             (sid, product_id, product_name, price, quantity),
         )
     conn.commit()
-    conn.close()
 
 
 def db_get_cart(sid: str) -> list[dict]:
@@ -267,7 +312,6 @@ def db_get_cart(sid: str) -> list[dict]:
            WHERE ci.session_id=? ORDER BY ci.created_at""",
         (sid,),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -278,14 +322,12 @@ def db_remove_from_cart(sid: str, product_name: str):
         (sid, product_name),
     )
     conn.commit()
-    conn.close()
 
 
 def db_clear_cart(sid: str):
     conn = get_conn()
     conn.execute("DELETE FROM cart_items WHERE session_id=?", (sid,))
     conn.commit()
-    conn.close()
 
 
 def db_update_cart_quantity(sid: str, product_name: str, quantity: int):
@@ -298,17 +340,25 @@ def db_update_cart_quantity(sid: str, product_name: str, quantity: int):
             (quantity, sid, product_name),
         )
     conn.commit()
-    conn.close()
+
+
+def cart_totals(cart: list[dict]) -> tuple[int, float]:
+    """Compute (item_count, total_price) from a cart items list."""
+    count = sum(int(i.get("quantity", 0)) for i in cart)
+    total = round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
+    return count, total
 
 
 def cart_count(sid: str) -> int:
     cart = db_get_cart(sid)
-    return sum(int(i.get("quantity", 0)) for i in cart)
+    count, _ = cart_totals(cart)
+    return count
 
 
 def cart_total(sid: str) -> float:
     cart = db_get_cart(sid)
-    return round(sum(float(i.get("price", 0)) * int(i.get("quantity", 0)) for i in cart), 2)
+    _, total = cart_totals(cart)
+    return total
 
 
 def place_order(sid: str) -> list[int]:
@@ -328,7 +378,6 @@ def place_order(sid: str) -> list[int]:
         order_ids.append(cur.lastrowid)
     conn.execute("DELETE FROM cart_items WHERE session_id=?", (sid,))
     conn.commit()
-    conn.close()
     return order_ids
 
 
@@ -337,7 +386,6 @@ def place_order(sid: str) -> list[int]:
 def get_all_products() -> list[dict]:
     conn = get_conn()
     rows = conn.execute("SELECT * FROM products ORDER BY id").fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -349,7 +397,6 @@ def search_products(query: str, limit: int = 8) -> list[dict]:
 
     conn = get_conn()
     rows = conn.execute("SELECT * FROM products WHERE quantity > 0").fetchall()
-    conn.close()
 
     scored = []
     for row in rows:
@@ -389,14 +436,12 @@ def get_product_by_name(name: str) -> dict | None:
         "SELECT * FROM products WHERE LOWER(name) LIKE LOWER(?) LIMIT 1",
         (f"%{name}%",),
     ).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
 def get_product_by_id(pid: int) -> dict | None:
     conn = get_conn()
     row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
@@ -410,7 +455,6 @@ def insert_product(name, category, color, price, description, quantity,
     )
     conn.commit()
     pid = cur.lastrowid
-    conn.close()
     return pid
 
 
@@ -420,14 +464,12 @@ def update_product(pid: int, **kwargs):
     vals = list(kwargs.values()) + [pid]
     conn.execute(f"UPDATE products SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=?", vals)
     conn.commit()
-    conn.close()
 
 
 def delete_product_row(pid: int) -> bool:
     conn = get_conn()
     cur = conn.execute("DELETE FROM products WHERE id=?", (pid,))
     conn.commit()
-    conn.close()
     return cur.rowcount > 0
 
 
@@ -439,7 +481,6 @@ def get_summary_stats() -> dict:
     total_orders = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
     total_revenue = conn.execute("SELECT COALESCE(SUM(price*quantity),0) FROM orders").fetchone()[0]
     total_customers = conn.execute("SELECT COUNT(DISTINCT session_id) FROM orders").fetchone()[0]
-    conn.close()
     return {
         "total_products": total_products,
         "total_orders": total_orders,
@@ -455,7 +496,6 @@ def get_revenue_by_day(days: int = 30) -> list[dict]:
            FROM orders WHERE created_at >= DATE('now', ?) GROUP BY DATE(created_at) ORDER BY date""",
         (f"-{days} days",),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -466,7 +506,6 @@ def get_top_products(limit: int = 5) -> list[dict]:
            FROM orders GROUP BY product_name ORDER BY total_sold DESC LIMIT ?""",
         (limit,),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -476,14 +515,12 @@ def get_revenue_by_category() -> list[dict]:
         """SELECT COALESCE(category,'other') as category, SUM(price*quantity) as revenue
            FROM orders GROUP BY category ORDER BY revenue DESC""",
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 def get_stock_levels() -> list[dict]:
     conn = get_conn()
     rows = conn.execute("SELECT id,name,category,quantity,price FROM products ORDER BY quantity ASC").fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -492,8 +529,33 @@ def get_recent_orders(limit: int = 10) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", (limit,)
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Order History (per session) ────────────────────────────────────────────
+
+def get_orders_by_session(sid: str, limit: int = 50) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT o.id, o.product_name, o.category, o.price, o.quantity, o.status, o.created_at,
+                  COALESCE(p.image_path, '') as image_path
+           FROM orders o
+           LEFT JOIN products p ON p.id = o.product_id
+           WHERE o.session_id = ?
+           ORDER BY o.created_at DESC LIMIT ?""",
+        (sid, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_order_stats_by_session(sid: str) -> dict:
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT COUNT(*) as total_orders, COALESCE(SUM(price * quantity), 0) as total_spent
+           FROM orders WHERE session_id = ?""",
+        (sid,),
+    ).fetchone()
+    return dict(row) if row else {"total_orders": 0, "total_spent": 0}
 
 
 # ── Wishlist ────────────────────────────────────────────────────────────────
@@ -506,7 +568,6 @@ def add_to_wishlist(sid: str, product_id: int):
         (sid, product_id),
     )
     conn.commit()
-    conn.close()
 
 
 def get_wishlist(sid: str) -> list[dict]:
@@ -517,14 +578,13 @@ def get_wishlist(sid: str) -> list[dict]:
            WHERE w.session_id=?""",
         (sid,),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 # ── Try-on image helpers ────────────────────────────────────────────────────
 
 def save_user_image(file_bytes: bytes, session_id: str, ext: str = ".jpg") -> str:
-    out = Path(config.USER_IMAGES_DIR) / f"{session_id}{ext}"
+    out = Path(config.USER_UPLOADS_DIR) / f"{session_id}{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(file_bytes)
     return str(out)
@@ -532,10 +592,10 @@ def save_user_image(file_bytes: bytes, session_id: str, ext: str = ".jpg") -> st
 
 def save_product_image(file_bytes: bytes, product_name: str, ext: str = ".jpg") -> str:
     safe_name = product_name.lower().replace(" ", "_").replace("/", "_")
-    out = Path(config.DB_IMAGES_DIR) / f"{safe_name}{ext}"
+    out = Path(config.PRODUCT_IMAGES_DIR) / f"{safe_name}{ext}"
     counter = 1
     while out.exists():
-        out = Path(config.DB_IMAGES_DIR) / f"{safe_name}_{counter}{ext}"
+        out = Path(config.PRODUCT_IMAGES_DIR) / f"{safe_name}_{counter}{ext}"
         counter += 1
     out.write_bytes(file_bytes)
     return str(out)
