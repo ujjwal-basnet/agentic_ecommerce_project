@@ -1,4 +1,4 @@
-"""Planner — Pure LLM plan generator. No fallbacks, no if-else."""
+"""Planner — LLM planner that returns structured tool calls."""
 
 from __future__ import annotations
 
@@ -6,76 +6,69 @@ import logging
 
 import llm
 from registry import get_registry
+from schemas import PlannerOutput
 
 logger = logging.getLogger(__name__)
 
 
 _SYSTEM = """You are the Planner for SmartShop.
 
-Your job: Convert user queries into agent execution plans.
+Your job: decide intent and tool calls for each user query.
 
-AVAILABLE AGENTS:
+AVAILABLE TOOLS:
 {registry}
 
 OUTPUT FORMAT:
-Return JSON list of steps. Each step:
-{
-  "step": 1,
-  "agent": "AgentName",
-  "reason": "why this step",
-  "input": {"key": "value"}
-}
+Return a JSON object with this shape:
+{{
+  "intent": "smalltalk|shopping|cart|weather|tryon|other",
+  "direct_response": "string or null",
+  "tool_calls": [
+    {{"tool": "tool_name", "args": {{"key": "value"}}}}
+  ]
+}}
 
 RULES:
-1. Use MINIMUM steps needed
-2. Chain steps with $$STEP_N_OUTPUT$$ to reference prior output
-3. Greetings/chitchat → return empty list []
-4. Never invent agents — use only from list above
+1. Greetings/chitchat: set direct_response and keep tool_calls empty.
+2. Tool tasks: keep direct_response null and fill tool_calls.
+3. Never invent tools — use only from list above.
+4. Keep tool_calls minimal and relevant.
 """
 
 
-def create_plan(query: str, session_id: str, channel: str = "web", context: str = "") -> list[dict]:
-    """Generate plan using LLM. No fallbacks — if LLM fails, returns empty plan."""
+def create_plan(
+    query: str,
+    session_id: str,
+    channel: str = "web",
+    context: str = "",
+) -> PlannerOutput:
+    """Generate a structured execution plan from user input."""
     registry = get_registry()
-    registry_text = "\n".join(
-        f"- {a['agent']}: {a['description']}" for a in registry.tool_registry()
-    )
+    registry_text = registry.get_planner_prompt_text()
 
     system = _SYSTEM.format(registry=registry_text)
-    user = f"Session: {session_id}\nChannel: {channel}\nQuery: {query}"
+    user_parts = []
     if context:
-        user = f"Context: {context}\n{user}"
+        user_parts.append(f"Context:\n{context}")
+    user_parts.append(f"Session: {session_id}")
+    user_parts.append(f"Channel: {channel}")
+    user_parts.append(f"Query: {query}")
+    user_msg = "\n\n".join(user_parts)
 
     try:
-        plan = llm.call_llm(system, user, json_output=True)
-        if not isinstance(plan, list):
-            logger.warning(f"Planner returned non-list: {type(plan)}")
-            return []
-
-        for step in plan:
-            inp = step.get("input", {})
-            inp["session_id"] = session_id
-            inp["channel"] = channel
-            step["input"] = inp
-
-        # Append WriterAgent if not present
-        if plan and plan[-1].get("agent") != "WriterAgent":
-            last_num = plan[-1].get("step", len(plan))
-            plan.append({
-                "step": last_num + 1,
-                "agent": "WriterAgent",
-                "reason": "Format final output for channel",
-                "input": {
-                    "session_id": session_id,
-                    "channel": channel,
-                    "original_query": query,
-                    "prev_output": f"$$STEP_{last_num}_OUTPUT$$",
-                },
-            })
-
+        plan = llm.call_llm(system, user_msg, schema=PlannerOutput)
+        logger.info(
+            "plan session=%s intent=%s direct=%s tools=%s",
+            session_id,
+            plan.intent,
+            bool(plan.direct_response),
+            [tc.tool for tc in plan.tool_calls],
+        )
         return plan
-
-    except Exception as e:
-        logger.error(f"Planner failed: {e}")
-        return []  # Empty plan = no action
-
+    except Exception as exc:
+        logger.exception("Planner failed session=%s", session_id)
+        return PlannerOutput(
+            intent="fallback",
+            direct_response=f"Sorry, I hit a planner error: {exc}",
+            tool_calls=[],
+        )
