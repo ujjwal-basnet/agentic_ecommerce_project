@@ -4,8 +4,12 @@ uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 sse-starlette>=1.8.2
 
-# ── OpenAI ────────────────────────────────────────────────────────────────
-openai>=1.30.0
+# ── Google Gemini ─────────────────────────────────────────────────────────
+langchain-google-genai>=4.0.0
+
+# ── OpenAI (optional, for other providers) ───────────────────────────────────
+# openai>=1.30.0
+# langchain-openai>=0.3.0
 
 # ── Utilities ─────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
