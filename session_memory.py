@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 from collections import defaultdict
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _store: dict[str, dict[str, Any]] = defaultdict(lambda: {
     "name": None,
@@ -12,6 +15,12 @@ _store: dict[str, dict[str, Any]] = defaultdict(lambda: {
 })
 
 MAX_RECENT = 10
+
+
+def init_memory_store() -> None:
+    """Initialize process-local session memory during app startup."""
+    _store.clear()
+    logger.info("Session memory ready")
 
 
 def get_memory(session_id: str) -> dict[str, Any]:
@@ -71,20 +80,17 @@ def get_context_string(session_id: str, include_db_history: bool = True) -> str:
         parts.append("Known facts: " + "; ".join(mem["facts"][-5:]))
 
     if include_db_history:
-        try:
-            from database import load_history
-            history = load_history(session_id, limit=10)
-            if history:
-                lines = []
-                for h in history:
-                    role = h.get("role", "user")
-                    text = h.get("content", "")[:150]
-                    if text:
-                        lines.append(f"{role}: {text}")
-                if lines:
-                    parts.append("Recent conversation:\n" + "\n".join(lines))
-        except Exception:
-            pass
+        from database import load_history
+        history = load_history(session_id, limit=5)
+        if history:
+            lines = []
+            for h in history:
+                role = h.get("role", "user")
+                text = h.get("content", "")[:150]
+                if text:
+                    lines.append(f"{role}: {text}")
+            if lines:
+                parts.append("Recent conversation:\n" + "\n".join(lines))
 
     if mem["recent_queries"]:
         parts.append("Recent user queries: " + " | ".join(mem["recent_queries"][-5:]))
