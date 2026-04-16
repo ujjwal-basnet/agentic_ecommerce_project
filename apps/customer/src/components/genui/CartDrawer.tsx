@@ -31,11 +31,9 @@ export default function CartDrawer({
   const [busy, setBusy] = useState<number | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
 
-  // Track previous items to detect actual data changes from parent
   const prevItemsRef = useRef<CartItem[]>([]);
   useEffect(() => {
     setMounted(true);
-    // Only update if items actually changed (new data from parent)
     const itemsChanged = items.length !== prevItemsRef.current.length ||
       items.some((item, i) => item.id !== prevItemsRef.current[i]?.id);
     if (itemsChanged) {
@@ -44,7 +42,6 @@ export default function CartDrawer({
     }
   }, [items]);
 
-  // Use localItems only - never fall back to props.items which may be stale
   const displayItems = localItems;
   const validItems = displayItems.filter(item => item.quantity > 0);
   const total = validItems.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -53,7 +50,6 @@ export default function CartDrawer({
     setBusy(item.id);
     const newQty = item.quantity + delta;
     if (newQty <= 0) {
-      // Don't remove item, just update quantity to 0
       await updateCartDirect(sessionId, item.product_name, 0);
       setLocalItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, quantity: 0 } : i)));
     } else {
@@ -98,114 +94,152 @@ export default function CartDrawer({
     setCheckingOut(false);
   }
 
+  /* ─── Order Confirmed State ──────────────────────────────────── */
   const orderDone = data?.__orderDone;
   if (orderDone) {
     const cd = orderDone;
     return (
-      <div className="bg-surface-container-lowest rounded-[2rem] overflow-hidden shadow-sm border border-outline-variant/10">
-        <div className="p-6 md:p-8 space-y-6">
+      <div className="bg-white rounded-[32px] overflow-hidden shadow-[0_8px_30px_rgba(43,52,55,0.04)] border border-[rgba(171,179,183,0.22)]">
+        <div className="p-6 md:p-9 space-y-6">
           <div className="flex flex-col items-center gap-3 py-4">
             <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
               <CheckCircle size={28} className="text-green-600" />
             </div>
-            <h3 className="font-headline font-bold text-lg text-on-surface tracking-tight">Order Confirmed</h3>
-            <p className="font-headline text-sm text-on-surface-variant text-center">{cd.msg}</p>
+            <h3 className="font-headline font-extrabold text-xl tracking-tight text-[#2b3437]">Order Confirmed</h3>
+            <p className="font-headline text-sm text-[#6b7280] text-center">{cd.msg}</p>
           </div>
-          <div className="border-t border-outline-variant/10 pt-4 space-y-3">
+          <div className="border-t border-[rgba(171,179,183,0.22)] pt-5 space-y-4">
             {cd.items.map((item: CartItem) => (
               <div key={item.id} className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-surface-container rounded-lg overflow-hidden flex-shrink-0">
+                <div className="w-14 h-14 bg-[#f3f4f6] rounded-[14px] overflow-hidden flex-shrink-0">
                   {item.image_path ? (
                     <img src={imageUrl(item.image_path)} alt={item.product_name} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-on-surface-variant/30 font-headline text-sm">S</div>
+                    <div className="w-full h-full flex items-center justify-center text-[#6b7280]/30 font-headline text-sm">S</div>
                   )}
                 </div>
-                <div className="flex-grow">
-                  <p className="font-headline font-medium text-sm text-on-surface">{item.product_name}</p>
-                  <p className="text-xs text-on-surface-variant">Qty: {item.quantity} × Rs. {item.price.toFixed(2)}</p>
+                <div className="flex-grow min-w-0">
+                  <p className="font-headline font-bold text-sm text-[#2b3437] truncate">{item.product_name}</p>
+                  <p className="text-xs text-[#6b7280]">Qty: {item.quantity} × Rs. {item.price.toFixed(2)}</p>
                 </div>
-                <p className="font-headline font-bold text-sm text-on-surface">Rs. {(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-headline font-extrabold text-sm text-[#2b3437]">Rs. {(item.price * item.quantity).toFixed(2)}</p>
               </div>
             ))}
           </div>
-          <div className="flex justify-between pt-4 border-t border-on-surface/5">
-            <span className="font-headline font-extrabold text-base uppercase tracking-tight">Total Paid</span>
-            <span className="font-headline font-extrabold text-lg text-primary">Rs. {cd.total.toFixed(2)}</span>
+          <div className="flex justify-between pt-4 border-t border-[rgba(171,179,183,0.22)]">
+            <span className="font-headline font-extrabold text-base uppercase tracking-[0.02em]">Total Paid</span>
+            <span className="font-headline font-extrabold text-lg">Rs. {cd.total.toFixed(2)}</span>
           </div>
         </div>
       </div>
     );
   }
 
+  /* ─── Empty Cart ─────────────────────────────────────────────── */
   if (!validItems.length) {
     return (
-      <div className="bg-surface-container-lowest rounded-2xl p-8 text-center border border-outline-variant/10 shadow-sm">
-        <p className="font-headline text-sm text-on-surface-variant">Your selection is empty.</p>
+      <div className="bg-white rounded-[32px] p-10 text-center border border-[rgba(171,179,183,0.22)] shadow-[0_8px_30px_rgba(43,52,55,0.04)]">
+        <p className="font-headline text-sm text-[#6b7280]">Your cart is empty.</p>
       </div>
     );
   }
 
+  /* ─── Cart with Items ────────────────────────────────────────── */
   return (
-    <div className="bg-surface-container-lowest rounded-[2rem] overflow-hidden shadow-sm border border-outline-variant/10">
-      <div className="p-6 md:p-8 space-y-6">
-        {validItems.map((item, i) => (
-          <div key={item.id} className={`flex items-center gap-6 group ${i > 0 ? "pt-6 border-t border-outline-variant/10" : ""}`}>
-            <div className="w-20 h-20 bg-surface-container rounded-xl overflow-hidden flex-shrink-0">
-              {item.image_path ? (
-                <img src={imageUrl(item.image_path)} alt={item.product_name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-on-surface-variant/30 font-headline text-xl">S</div>
-              )}
-            </div>
-            <div className="flex-grow flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-headline font-bold text-on-surface tracking-tight">{item.product_name}</h3>
-                {item.color && <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mt-1">{item.color}</p>}
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="flex items-center bg-surface-container-low rounded-full px-1.5 py-1">
-                  <button onClick={() => handleQty(item, -1)} disabled={busy === item.id}
-                    className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-30">
-                    <Minus size={14} />
-                  </button>
-                  <span className="w-8 text-center text-sm font-bold font-headline">{item.quantity}</span>
-                  <button onClick={() => handleQty(item, 1)} disabled={busy === item.id}
-                    className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-30">
-                    <Plus size={14} />
-                  </button>
-                </div>
-                <div className="text-right">
-                  <p className="font-headline font-bold text-on-surface">Rs. {(item.price * item.quantity).toFixed(2)}</p>
-                  <button onClick={() => handleRemove(item)} disabled={busy === item.id}
-                    className="text-[10px] font-label uppercase tracking-wider text-error mt-1 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30">
-                    <Trash2 size={12} /> Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
+    <div className="bg-white rounded-[32px] overflow-hidden shadow-[0_8px_30px_rgba(43,52,55,0.04)] border border-[rgba(171,179,183,0.22)]">
+      <div className="p-6 md:p-9 space-y-0">
+        {/* Header */}
+        <div className="mb-6">
+          <h2 className="font-headline font-extrabold text-[clamp(1.75rem,3vw,2.4rem)] leading-none tracking-[-0.03em] text-[#2b3437]">Cart</h2>
+          <p className="mt-2 text-[#6b7280] text-[clamp(0.92rem,1.2vw,1rem)]">{validItems.length} item{validItems.length !== 1 ? "s" : ""} in your selection</p>
+        </div>
 
-        <div className="pt-6 border-t border-on-surface/5 space-y-2">
-          <div className="flex justify-between text-sm text-on-surface-variant">
+        {/* Items */}
+        <div className="space-y-0">
+          {validItems.map((item, i) => (
+            <div
+              key={item.id}
+              className={`flex gap-4 py-5 ${i > 0 ? "border-t border-[rgba(171,179,183,0.22)]" : ""}`}
+            >
+              {/* Thumbnail */}
+              <div className="w-20 h-20 bg-[#f3f4f6] rounded-[14px] overflow-hidden flex-shrink-0">
+                {item.image_path ? (
+                  <img src={imageUrl(item.image_path)} alt={item.product_name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[#6b7280]/30 font-headline text-xl">S</div>
+                )}
+              </div>
+
+              {/* Item details */}
+              <div className="flex-grow min-w-0 flex flex-col gap-3">
+                {/* Top row: name + price */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h3 className="font-headline font-bold text-[clamp(1rem,1.5vw,1.2rem)] tracking-[-0.02em] text-[#2b3437] truncate">{item.product_name}</h3>
+                    {item.color && (
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-[#6b7280] mt-1">{item.color}</p>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-headline font-extrabold text-[clamp(1rem,1.6vw,1.15rem)] tracking-[-0.02em] text-[#2b3437]">
+                      Rs. {(item.price * item.quantity).toFixed(2)}
+                    </p>
+                    <button
+                      onClick={() => handleRemove(item)}
+                      disabled={busy === item.id}
+                      className="text-[#dc2626] text-[12px] mt-1 cursor-pointer hover:underline disabled:opacity-30"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quantity controls */}
+                <div className="flex items-center">
+                  <div className="inline-flex items-center bg-[#f3f4f6] rounded-full px-1 py-1 gap-0.5">
+                    <button
+                      onClick={() => handleQty(item, -1)}
+                      disabled={busy === item.id}
+                      className="w-9 h-9 flex items-center justify-center text-[#4b5563] hover:bg-[#e5e7eb] rounded-full transition-colors disabled:opacity-30"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="min-w-[32px] text-center font-headline font-bold text-[15px]">{item.quantity}</span>
+                    <button
+                      onClick={() => handleQty(item, 1)}
+                      disabled={busy === item.id}
+                      className="w-9 h-9 flex items-center justify-center text-[#4b5563] hover:bg-[#e5e7eb] rounded-full transition-colors disabled:opacity-30"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Summary */}
+        <div className="pt-6 border-t border-[rgba(171,179,183,0.22)] space-y-3">
+          <div className="flex justify-between items-center text-[15px] text-[#6b7280]">
             <span>Subtotal</span>
-            <span className="font-medium">Rs. {total.toFixed(2)}</span>
+            <span className="font-semibold text-[#2b3437]">Rs. {total.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-sm text-on-surface-variant">
+          <div className="flex justify-between items-center text-[15px] text-[#6b7280]">
             <span>Shipping</span>
-            <span className="font-medium">Calculated at checkout</span>
+            <span className="font-semibold text-[#2b3437]">Calculated at checkout</span>
           </div>
-          <div className="flex justify-between pt-3">
-            <span className="font-headline font-extrabold text-lg uppercase tracking-tight">Total</span>
-            <span className="font-headline font-extrabold text-xl text-primary">Rs. {total.toFixed(2)}</span>
+          <div className="flex justify-between items-center pt-3">
+            <span className="font-headline font-extrabold text-[1.05rem] uppercase tracking-[0.02em]">Total</span>
+            <span className="font-headline font-extrabold text-[clamp(1.15rem,1.8vw,1.4rem)] tracking-[-0.02em]">Rs. {total.toFixed(2)}</span>
           </div>
         </div>
 
+        {/* Checkout button */}
         <button
           onClick={handleCheckout}
           disabled={checkingOut}
-          className="w-full bg-primary hover:bg-primary-dim text-on-primary py-4 rounded-xl font-headline font-bold text-sm uppercase tracking-[0.2em] shadow-lg shadow-primary/10 transition-all active:scale-[0.98] flex items-center justify-center gap-3 group disabled:opacity-50"
+          className="w-full mt-6 bg-[#111827] hover:bg-[#1f2937] text-white py-4 rounded-2xl font-headline font-extrabold text-[14px] uppercase tracking-[0.18em] shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-3 group disabled:opacity-50"
         >
           {checkingOut ? "Placing Order..." : "Proceed to Checkout"}
           {!checkingOut && <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />}
