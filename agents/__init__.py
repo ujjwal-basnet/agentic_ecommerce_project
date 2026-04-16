@@ -1,1 +1,1 @@
-"""Agents — one file per agent. Never import each other."""
+"""SmartShop tools — individual tool functions used by the registry."""
