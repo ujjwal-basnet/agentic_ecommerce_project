@@ -39,10 +39,14 @@ database/smartshop.db-wal
 # ChromaDB
 chroma/
 
-# Uploads
-uploads/
-!uploads/user_images/
-!uploads/tryon_outputs/
+# Uploads / generated images (use Supabase Storage in production)
+data/uploads/
+data/tryon/
+data/campaigns/
+data/products/
+data/*.db
+data/*.db-shm
+data/*.db-wal
 
 # Logs
 logs/
