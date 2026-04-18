@@ -27,6 +27,11 @@ class ToolResult(APIModel):
     error: str | None = None
 
 
+class QueryResolution(APIModel):
+    needs_context: bool = False
+    rewritten_query: str = ""
+
+
 class PlannerOutput(APIModel):
     intent: Literal[
         "smalltalk",
@@ -162,6 +167,94 @@ class AnalyticsResponse(APIModel):
     orders: list[dict[str, Any]]
 
 
+class OverviewStats(APIModel):
+    total_revenue: float
+    total_orders: int
+    total_customers: int
+    total_products: int
+    today_revenue: float
+    yesterday_revenue: float
+    day_delta_pct: float
+
+
+class OverviewResponse(APIModel):
+    stats: OverviewStats
+
+
+class ForecastPoint(APIModel):
+    date: str
+    value: float
+    is_forecast: bool = False
+
+
+class ForecastResponse(APIModel):
+    range: str
+    points: list[ForecastPoint]
+    historical_end_index: int
+
+
+class TrendingProduct(APIModel):
+    product_id: int
+    name: str
+    price: float
+    image_path: str | None = None
+    score: float
+    demand_pct: int
+    demand_level: Literal["Peak", "High", "Med"]
+
+
+class TrendingResponse(APIModel):
+    products: list[TrendingProduct]
+
+
+class LogisticsRow(APIModel):
+    order_id: int
+    user_name: str
+    user_email: str | None = None
+    user_initials: str
+    product_name: str
+    quantity: int
+    revenue: float
+    status: str
+    created_at: str | None = None
+
+
+class LogisticsResponse(APIModel):
+    rows: list[LogisticsRow]
+
+
+class OwnerAnalyticsResponse(APIModel):
+    stats: OverviewStats
+    forecast: ForecastResponse
+    products: list[TrendingProduct]
+    rows: list[LogisticsRow]
+
+
+class StatusUpdateResponse(APIModel):
+    ok: bool
+    order_id: int
+    status: str
+
+
+class UserSchema(APIModel):
+    id: int
+    name: str
+    email: str
+
+
+class LoginResponse(APIModel):
+    ok: bool
+    user: UserSchema
+
+
+class MeResponse(APIModel):
+    user: UserSchema | None = None
+
+
+class TrackViewResponse(APIModel):
+    ok: bool
+
+
 class ProductCreateResponse(APIModel):
     success: bool
     product_id: int
@@ -190,3 +283,24 @@ class TryOnResponse(APIModel):
     image_path: str | None = None
     message: str | None = None
     error: str | None = None
+
+
+# ── Campaign workflow (Curator AI) ───────────────────────────────────────────
+
+class CaptionRestyleResponse(APIModel):
+    caption: str
+    tone: str
+    language: str = "en"
+
+
+class VisualGenerateResponse(APIModel):
+    success: bool
+    image_path: str | None = None
+    image_url: str | None = None
+    error: str | None = None
+
+
+class LaunchCampaignResponse(APIModel):
+    ok: bool
+    deployed: list[str] = Field(default_factory=list)
+    failed: list[dict] = Field(default_factory=list)

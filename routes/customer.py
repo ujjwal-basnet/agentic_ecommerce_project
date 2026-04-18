@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form
 from sse_starlette.sse import EventSourceResponse
 
+import analytics_ml
 import database
 import engine
 import session_memory
@@ -75,6 +76,13 @@ async def chat_stream(
                     }),
                 }
 
+            # Images (e.g. virtual try-on result)
+            for img_path in result.get("images") or []:
+                yield {
+                    "event": "message",
+                    "data": json.dumps({"type": "image", "image_path": img_path}),
+                }
+
             # Cart sync
             yield {
                 "event": "message",
@@ -123,6 +131,7 @@ async def add_to_cart_direct(
 ):
     database.ensure_session(session_id)
     database.db_add_to_cart(session_id, product_name, float(price), int(quantity))
+    analytics_ml.invalidate_cache()
     cart = database.db_get_cart(session_id)
     count, total = database.cart_totals(cart)
     return {
@@ -141,6 +150,7 @@ async def update_cart_item(
 ):
     database.ensure_session(session_id)
     database.db_update_cart_quantity(session_id, product_name, quantity)
+    analytics_ml.invalidate_cache()
     cart = database.db_get_cart(session_id)
     count, total = database.cart_totals(cart)
     return {"success": True, "cart_total_items": count, "cart_total_price": total}
@@ -153,6 +163,7 @@ async def remove_from_cart(
 ):
     database.ensure_session(session_id)
     database.db_remove_from_cart(session_id, product_name)
+    analytics_ml.invalidate_cache()
     cart = database.db_get_cart(session_id)
     count, total = database.cart_totals(cart)
     return {"success": True, "cart_total_items": count, "cart_total_price": total}
@@ -166,6 +177,7 @@ async def checkout(session_id: str = Form(...)):
         return {"success": False, "message": "Cart is empty", "order_ids": [], "total": 0, "item_count": 0}
     count, total = database.cart_totals(cart)
     order_ids = database.place_order(session_id)
+    analytics_ml.invalidate_cache()
     return {
         "success": True,
         "message": f"Order placed! {count} items totaling Rs. {total}",

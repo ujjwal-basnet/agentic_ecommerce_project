@@ -8,7 +8,7 @@ import hmac
 import json
 import logging
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 import config
@@ -23,7 +23,11 @@ GRAPH_API_BASE = f"https://graph.facebook.com/{config.FB_GRAPH_VERSION}"
 
 
 @router.get("/webhook")
-async def verify_webhook(hub_mode: str = "", hub_verify_token: str = "", hub_challenge: str = ""):
+async def verify_webhook(
+    hub_mode: str = Query("", alias="hub.mode"),
+    hub_verify_token: str = Query("", alias="hub.verify_token"),
+    hub_challenge: str = Query("", alias="hub.challenge"),
+):
     """Verify webhook with Facebook."""
     expected = getattr(config, 'FB_VERIFY_TOKEN', 'smartshop-webhook')
     if hub_mode == "subscribe" and hub_verify_token == expected:

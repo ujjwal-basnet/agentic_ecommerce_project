@@ -8,7 +8,7 @@ import hmac
 import json
 import logging
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 import config
@@ -23,7 +23,11 @@ GRAPH_API_BASE = f"https://graph.facebook.com/{config.FB_GRAPH_VERSION}"
 
 
 @router.get("/webhook")
-async def verify_webhook(hub_mode: str = "", hub_verify_token: str = "", hub_challenge: str = ""):
+async def verify_webhook(
+    hub_mode: str = Query("", alias="hub.mode"),
+    hub_verify_token: str = Query("", alias="hub.verify_token"),
+    hub_challenge: str = Query("", alias="hub.challenge"),
+):
     """Verify webhook with Instagram."""
     expected = getattr(config, 'IG_VERIFY_TOKEN', config.META_VERIFY_TOKEN)
     if hub_mode == "subscribe" and hub_verify_token == expected:
@@ -76,17 +80,49 @@ async def _handle_dm(msg: dict):
 async def _send_dm(sender_id: str, message: str):
     """Send plain text DM to Instagram."""
     import aiohttp
-    
+
     token = getattr(config, 'META_ACCESS_TOKEN', None)
     ig_user_id = getattr(config, 'IG_USER_ID', None)
-    
+
     if not token or not ig_user_id:
         raise RuntimeError("Instagram not configured")
-    
+
     url = f"{GRAPH_API_BASE}/{ig_user_id}/messages"
     payload = {"recipient": {"id": sender_id}, "message": {"text": message}}
-    
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, params={"access_token": token}, timeout=10) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Instagram API error: {await resp.text()}")
+
+
+async def publish_photo_to_instagram(image_url: str, caption: str) -> bool:
+    """Publish a photo post to the Instagram Business feed via Graph API (2-step)."""
+    import asyncio
+    import aiohttp
+
+    token = getattr(config, "META_ACCESS_TOKEN", None)
+    ig_user_id = getattr(config, "IG_USER_ID", None)
+    if not token or not ig_user_id:
+        raise RuntimeError("Instagram not configured (IG_USER_ID / META_ACCESS_TOKEN)")
+
+    async with aiohttp.ClientSession() as session:
+        container_url = f"{GRAPH_API_BASE}/{ig_user_id}/media"
+        params = {"image_url": image_url, "caption": caption, "access_token": token}
+        async with session.post(container_url, params=params, timeout=30) as resp:
+            data = await resp.json()
+            creation_id = data.get("id")
+            if not creation_id:
+                raise RuntimeError(f"Instagram container failed: {data}")
+
+        # Graph API recommends a brief wait so the media is processed before publish.
+        await asyncio.sleep(5)
+
+        publish_url = f"{GRAPH_API_BASE}/{ig_user_id}/media_publish"
+        params = {"creation_id": creation_id, "access_token": token}
+        async with session.post(publish_url, params=params, timeout=15) as resp:
+            data = await resp.json()
+            if "id" in data:
+                _log.info("Instagram photo published: %s", data["id"])
+                return True
+            raise RuntimeError(f"Instagram publish failed: {data}")

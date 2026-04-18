@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: smartshop-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSLMODE
+        value: require
+      - key: PRODUCT_IMAGES_DIR
+        value: data/products
+      - key: USER_UPLOADS_DIR
+        value: data/uploads
+      - key: TRYON_DIR
+        value: data/tryon
+      - key: CAMPAIGN_DIR
+        value: data/campaigns
+      - key: PROTOCOL_LOG_PATH
+        value: logs/protocol_log.jsonl
+      - key: MCP_BEARER_TOKEN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_GENAI_USE_VERTEXAI
+        value: "false"
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: FB_PAGE_ID
+        sync: false
+      - key: FB_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: FB_GRAPH_VERSION
+        value: v24.0
+      - key: FB_VERIFY_TOKEN
+        sync: false
+      - key: IG_USER_ID
+        sync: false
+      - key: IG_VERIFY_TOKEN
+        sync: false
+      - key: ENABLE_FB_MESSENGER
+        value: "true"
+      - key: ENABLE_INSTAGRAM
+        value: "true"

@@ -6,18 +6,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── LLM / Google Gemini ─────────────────────────────────────────────────────
-# Using Google Gemini API (fast, free tier available). Get key from aistudio.google.com
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY", "")
-GEMINI_API_KEY = GOOGLE_API_KEY  # Legacy alias for older imports/configs.
-GEMINI_MODEL = "gemini-3-flash-preview"  # Chat/planning
-GEMINI_IMAGE_MODEL = "gemini-3-flash-preview"  # Image generation/editing
+# ── LLM / Google Gemini on Vertex AI ────────────────────────────────────────
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("VERTEX_PROJECT_ID", "")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv("VERTEX_LOCATION", "us-central1")
 _VERTEX_ENV = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
 GOOGLE_GENAI_USE_VERTEXAI = (
-    _VERTEX_ENV.lower() in {"1", "true", "yes", "on"} if _VERTEX_ENV is not None else None
+    _VERTEX_ENV.lower() in {"1", "true", "yes", "on"}
+    if _VERTEX_ENV is not None
+    else True
 )
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+# Kept only as a fallback for Gemini Developer API code paths elsewhere.
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = GOOGLE_API_KEY  # Legacy alias for older imports/configs.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 
 # ── LLM / OpenRouter (commented out - switch back by changing llm.py) ────────
 # OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY", "")
@@ -29,14 +33,26 @@ GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 # OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "Agentic Ecommerce")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 
-DB_PATH = os.getenv("DB_PATH", "data/database.sqlite")
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("SUPABASE_DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    or ""
+)
+DB_SSLMODE = os.getenv("DB_SSLMODE", "require")
+DB_PATH = os.getenv("DB_PATH", "data/database.sqlite")  # Legacy local path.
+PRODUCTS_MD_PATH = os.getenv("PRODUCTS_MD_PATH", "data/products.md")
 PRODUCT_IMAGES_DIR = os.getenv("PRODUCT_IMAGES_DIR", "data/products")
 USER_UPLOADS_DIR = os.getenv("USER_UPLOADS_DIR", "data/uploads")
 TRYON_DIR = os.getenv("TRYON_DIR", "data/tryon")
+CAMPAIGN_DIR = os.getenv("CAMPAIGN_DIR", "data/campaigns")
 
-# Nano Banana for fast virtual try-on (Gemini image generation)
-# Docs: https://nanobananaapi.ai/
-NANO_BANANA_MODEL = "gemini-2.0-flash-exp-image-generation"
+# Public base URL — used by Facebook/Instagram Graph API (which fetch images by URL).
+# Set this to your ngrok https URL when deploying campaigns locally.
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+# Nano Banana / Gemini image generation.
+NANO_BANANA_MODEL = os.getenv("NANO_BANANA_MODEL", GEMINI_IMAGE_MODEL)
 
 # ── Meta/Facebook/Instagram Unified Config ───────────────────────────────────
 # App Credentials (shared across Facebook, Instagram, WhatsApp)
@@ -74,10 +90,13 @@ PROTOCOL_LOG_PATH = os.getenv("PROTOCOL_LOG_PATH", "logs/protocol_log.jsonl")
 CUSTOMER_API_URL = os.getenv("CUSTOMER_API_URL", "http://localhost:8000")
 OWNER_API_URL = os.getenv("OWNER_API_URL", "http://localhost:8000")
 
+# Remote MCP access for Claude/Cursor/etc. Set this on Render and keep it secret.
+MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+
 
 def gemini_enabled() -> bool:
     if GOOGLE_GENAI_USE_VERTEXAI:
-        return True
+        return bool(GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS)
     return bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
 
 
@@ -85,5 +104,6 @@ def gemini_enabled() -> bool:
 
 # Ensure directories exist
 for d in [Path(DB_PATH).parent, Path(PRODUCT_IMAGES_DIR),
-          Path(USER_UPLOADS_DIR), Path(TRYON_DIR), Path(PROTOCOL_LOG_PATH).parent]:
+          Path(USER_UPLOADS_DIR), Path(TRYON_DIR), Path(CAMPAIGN_DIR),
+          Path(PROTOCOL_LOG_PATH).parent]:
     d.mkdir(parents=True, exist_ok=True)

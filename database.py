@@ -1,12 +1,19 @@
-"""SQLite schema + ALL database helpers. Single source of truth for every DB call."""
+"""Supabase Postgres schema + database helpers.
+
+The rest of the backend imports this module only; database credentials stay here
+and in backend environment variables.
+"""
 
 import json
-import sqlite3
 import datetime
 import random
 import logging
+import re
 import threading
+from difflib import SequenceMatcher
 from pathlib import Path
+
+import psycopg2
 import config
 
 DB_PATH = Path(config.DB_PATH)
@@ -16,42 +23,168 @@ logger = logging.getLogger(__name__)
 _local = threading.local()
 
 
-def get_conn() -> sqlite3.Connection:
-    """Return a thread-local persistent connection."""
+class Row:
+    """Small row wrapper with sqlite.Row-style access by name or index."""
+
+    def __init__(self, columns: list[str], values: tuple):
+        self._columns = columns
+        self._values = tuple(self._normalize(value) for value in values)
+        self._data = dict(zip(columns, self._values))
+
+    @staticmethod
+    def _normalize(value):
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        return value
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def keys(self):
+        return self._data.keys()
+
+    def items(self):
+        return self._data.items()
+
+    def values(self):
+        return self._data.values()
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __repr__(self):
+        return repr(self._data)
+
+
+class QueryResult:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._columns = [d[0] for d in cursor.description] if cursor.description else []
+        self.rowcount = cursor.rowcount
+        if not self._columns:
+            cursor.close()
+
+    def fetchone(self):
+        try:
+            row = self._cursor.fetchone()
+            return Row(self._columns, row) if row else None
+        finally:
+            self._cursor.close()
+
+    def fetchall(self):
+        try:
+            return [Row(self._columns, row) for row in self._cursor.fetchall()]
+        finally:
+            self._cursor.close()
+
+
+def _convert_placeholders(sql: str) -> str:
+    return sql.replace("?", "%s")
+
+
+class PostgresConnection:
+    def __init__(self, raw):
+        self.raw = raw
+
+    @property
+    def closed(self) -> bool:
+        return bool(self.raw.closed)
+
+    def execute(self, sql: str, params: tuple | list | None = None) -> QueryResult:
+        cursor = self.raw.cursor()
+        try:
+            cursor.execute(_convert_placeholders(sql), params)
+            return QueryResult(cursor)
+        except Exception:
+            cursor.close()
+            self.raw.rollback()
+            raise
+
+    def executemany(self, sql: str, seq_of_params) -> QueryResult:
+        cursor = self.raw.cursor()
+        try:
+            cursor.executemany(_convert_placeholders(sql), seq_of_params)
+            return QueryResult(cursor)
+        except Exception:
+            cursor.close()
+            self.raw.rollback()
+            raise
+
+    def executescript(self, script: str) -> None:
+        cursor = self.raw.cursor()
+        try:
+            for statement in script.split(";"):
+                statement = statement.strip()
+                if statement:
+                    cursor.execute(statement)
+        except Exception:
+            self.raw.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def commit(self):
+        self.raw.commit()
+
+    def rollback(self):
+        self.raw.rollback()
+
+
+def _connect_raw():
+    if not config.DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is required. Set it to the Supabase Postgres connection string "
+            "in backend .env or Render environment variables."
+        )
+    return psycopg2.connect(
+        config.DATABASE_URL,
+        sslmode=config.DB_SSLMODE,
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+    )
+
+
+def get_conn() -> PostgresConnection:
+    """Return a thread-local persistent Supabase Postgres connection."""
     conn = getattr(_local, "conn", None)
-    if conn is None:
-        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
+    if conn is None or conn.closed:
+        conn = PostgresConnection(_connect_raw())
         _local.conn = conn
     return conn
 
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     name        TEXT    NOT NULL,
     category    TEXT,
     color       TEXT,
-    price       REAL    NOT NULL DEFAULT 0,
+    price       DOUBLE PRECISION NOT NULL DEFAULT 0,
     description TEXT,
     quantity    INTEGER NOT NULL DEFAULT 0,
     image_path  TEXT,
     tags        TEXT    DEFAULT '[]',
     is_wearable INTEGER DEFAULT 0,
     indexed     INTEGER DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     name        TEXT,
     email       TEXT UNIQUE,
     phone       TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    last_seen   TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -59,68 +192,77 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
     user_agent       TEXT,
     discount_applied INTEGER DEFAULT 0,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_active      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    last_active      TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS chat_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     session_id  TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     role        TEXT    NOT NULL,
     content     TEXT    NOT NULL,
     tool_name   TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_history(session_id, created_at);
 
 CREATE TABLE IF NOT EXISTS cart_items (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    id           SERIAL PRIMARY KEY,
     session_id   TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
     product_id   INTEGER REFERENCES products(id) ON DELETE SET NULL,
     product_name TEXT    NOT NULL,
-    price        REAL    NOT NULL,
+    price        DOUBLE PRECISION NOT NULL,
     quantity     INTEGER NOT NULL DEFAULT 1,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_cart_session ON cart_items(session_id);
+CREATE INDEX IF NOT EXISTS idx_cart_user ON cart_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_cart_product ON cart_items(product_id);
 
 CREATE TABLE IF NOT EXISTS wishlists (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     session_id  TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(session_id, product_id)
 );
+CREATE INDEX IF NOT EXISTS idx_wishlists_user ON wishlists(user_id);
+CREATE INDEX IF NOT EXISTS idx_wishlists_product ON wishlists(product_id);
 
 CREATE TABLE IF NOT EXISTS orders (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    id               SERIAL PRIMARY KEY,
     session_id       TEXT    REFERENCES sessions(id) ON DELETE SET NULL,
     user_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
     product_id       INTEGER REFERENCES products(id) ON DELETE SET NULL,
     product_name     TEXT    NOT NULL,
     category         TEXT,
-    price            REAL    NOT NULL,
+    price            DOUBLE PRECISION NOT NULL,
     quantity         INTEGER NOT NULL DEFAULT 1,
     status           TEXT    NOT NULL DEFAULT 'pending',
     shipping_name    TEXT,
     shipping_phone   TEXT,
     shipping_address TEXT,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(session_id);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_product ON orders(product_id);
 
 CREATE TABLE IF NOT EXISTS product_views (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    id           SERIAL PRIMARY KEY,
     session_id   TEXT    REFERENCES sessions(id) ON DELETE SET NULL,
     product_id   INTEGER REFERENCES products(id) ON DELETE CASCADE,
     search_query TEXT,
-    viewed_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    viewed_at    TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_views_product ON product_views(product_id);
+CREATE INDEX IF NOT EXISTS idx_views_session ON product_views(session_id);
+CREATE INDEX IF NOT EXISTS idx_views_viewed_at ON product_views(viewed_at);
 """
 _REQUIRED_TABLES = {
     "products",
@@ -149,6 +291,11 @@ _CATEGORIES = {
 }
 _COLORS = ["red","blue","green","black","white","yellow","pink","purple",
            "orange","grey","gray","brown","navy","royal","maroon","beige"]
+
+
+def _image_match_key(value: str) -> str:
+    value = value.lower().replace("flavoured", "flavored")
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
 
 def _filename_to_product(image_path: Path) -> tuple:
@@ -181,8 +328,48 @@ def _build_seed_products() -> list[tuple]:
     return products
 
 
+def _repair_product_image_paths(conn: PostgresConnection) -> int:
+    """Backfill missing image_path values from matching files in PRODUCT_IMAGES_DIR."""
+    image_dir = Path(config.PRODUCT_IMAGES_DIR)
+    if not image_dir.exists():
+        return 0
+
+    images = [
+        img for img in image_dir.iterdir()
+        if img.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+    ]
+    if not images:
+        return 0
+
+    image_keys = [(_image_match_key(img.stem), img) for img in images]
+    rows = conn.execute(
+        "SELECT id, name FROM products WHERE image_path IS NULL OR image_path = ''"
+    ).fetchall()
+
+    repaired = 0
+    for row in rows:
+        product_key = _image_match_key(row["name"])
+        best_score, best_image = max(
+            (
+                (SequenceMatcher(None, product_key, image_key).ratio(), img)
+                for image_key, img in image_keys
+            ),
+            default=(0.0, None),
+        )
+        if best_image is not None and best_score >= 0.78:
+            conn.execute(
+                "UPDATE products SET image_path=?, updated_at=NOW() WHERE id=?",
+                (str(best_image), row["id"]),
+            )
+            repaired += 1
+
+    if repaired:
+        logger.info("Repaired image_path for %d products", repaired)
+    return repaired
+
+
 def _seed_orders(conn):
-    conn.execute("INSERT OR IGNORE INTO sessions (id) VALUES ('demo')")
+    conn.execute("INSERT INTO sessions (id) VALUES ('demo') ON CONFLICT (id) DO NOTHING")
     rows = conn.execute("SELECT id, name, category, price FROM products LIMIT 20").fetchall()
     if not rows:
         return
@@ -202,10 +389,6 @@ def init_db():
     conn = get_conn()
     conn.executescript(_SCHEMA)
     conn.commit()
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(products)").fetchall()]
-    if "is_wearable" not in cols:
-        conn.execute("ALTER TABLE products ADD COLUMN is_wearable INTEGER DEFAULT 0")
-        conn.commit()
     if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0:
         seed_products = _build_seed_products()
         if seed_products:
@@ -215,16 +398,19 @@ def init_db():
                 seed_products,
             )
             logger.info("Seeded %d products from %s", len(seed_products), config.PRODUCT_IMAGES_DIR)
+    _repair_product_image_paths(conn)
     if conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0:
         _seed_orders(conn)
         logger.info("Seeded 50 demo orders")
     conn.commit()
     _validate_schema(conn)
-    logger.info("Database ready: %s", DB_PATH)
+    logger.info("Database ready: Supabase Postgres")
 
 
-def _validate_schema(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+def _validate_schema(conn: PostgresConnection) -> None:
+    rows = conn.execute(
+        "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'"
+    ).fetchall()
     tables = {row["name"] for row in rows}
     missing = sorted(_REQUIRED_TABLES - tables)
     if missing:
@@ -232,7 +418,7 @@ def _validate_schema(conn: sqlite3.Connection) -> None:
 
 
 def startup() -> None:
-    """Open and validate the SQLite database during FastAPI startup."""
+    """Open and validate the Supabase Postgres database during FastAPI startup."""
     init_db()
 
 
@@ -242,8 +428,8 @@ def ensure_session(sid: str):
     if not sid or not sid.strip():
         raise ValueError("session_id is required")
     conn = get_conn()
-    conn.execute("INSERT OR IGNORE INTO sessions (id) VALUES (?)", (sid,))
-    conn.execute("UPDATE sessions SET last_active=CURRENT_TIMESTAMP WHERE id=?", (sid,))
+    conn.execute("INSERT INTO sessions (id) VALUES (?) ON CONFLICT (id) DO NOTHING", (sid,))
+    conn.execute("UPDATE sessions SET last_active=NOW() WHERE id=?", (sid,))
     conn.commit()
 
 
@@ -371,11 +557,11 @@ def place_order(sid: str) -> list[int]:
     for item in cart:
         cur = conn.execute(
             "INSERT INTO orders (session_id, product_id, product_name, category, price, quantity, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+            "VALUES (?, ?, ?, ?, ?, ?, 'pending') RETURNING id",
             (sid, item.get("product_id"), item["product_name"],
              item.get("category", ""), float(item["price"]), int(item["quantity"])),
         )
-        order_ids.append(cur.lastrowid)
+        order_ids.append(cur.fetchone()["id"])
     conn.execute("DELETE FROM cart_items WHERE session_id=?", (sid,))
     conn.commit()
     return order_ids
@@ -450,19 +636,21 @@ def insert_product(name, category, color, price, description, quantity,
     conn = get_conn()
     cur = conn.execute(
         "INSERT INTO products (name,category,color,price,description,quantity,image_path,tags,is_wearable) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
         (name, category, color, price, description, quantity, image_path, tags, is_wearable),
     )
+    pid = cur.fetchone()["id"]
     conn.commit()
-    pid = cur.lastrowid
     return pid
 
 
 def update_product(pid: int, **kwargs):
+    if not kwargs:
+        return
     conn = get_conn()
     sets = ", ".join(f"{k}=?" for k in kwargs)
     vals = list(kwargs.values()) + [pid]
-    conn.execute(f"UPDATE products SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=?", vals)
+    conn.execute(f"UPDATE products SET {sets}, updated_at=NOW() WHERE id=?", vals)
     conn.commit()
 
 
@@ -493,7 +681,8 @@ def get_revenue_by_day(days: int = 30) -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
         """SELECT DATE(created_at) as date, SUM(price*quantity) as revenue, COUNT(*) as orders
-           FROM orders WHERE created_at >= DATE('now', ?) GROUP BY DATE(created_at) ORDER BY date""",
+           FROM orders WHERE created_at >= CURRENT_DATE + (?)::interval
+           GROUP BY DATE(created_at) ORDER BY date""",
         (f"-{days} days",),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -564,7 +753,7 @@ def add_to_wishlist(sid: str, product_id: int):
     ensure_session(sid)
     conn = get_conn()
     conn.execute(
-        "INSERT OR IGNORE INTO wishlists (session_id,product_id) VALUES (?,?)",
+        "INSERT INTO wishlists (session_id,product_id) VALUES (?,?) ON CONFLICT (session_id, product_id) DO NOTHING",
         (sid, product_id),
     )
     conn.commit()
@@ -599,3 +788,222 @@ def save_product_image(file_bytes: bytes, product_name: str, ext: str = ".jpg") 
         counter += 1
     out.write_bytes(file_bytes)
     return str(out)
+
+
+# ── Users / Auth ────────────────────────────────────────────────────────────
+
+def upsert_user(name: str, email: str) -> dict:
+    """Insert or update a user by email. Returns the full user row."""
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO users (name, email) VALUES (?, ?)
+           ON CONFLICT(email) DO UPDATE SET
+             name = excluded.name,
+             last_seen = CURRENT_TIMESTAMP""",
+        (name.strip(), email.strip().lower()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, name, email FROM users WHERE email = ?",
+        (email.strip().lower(),),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def bind_session_user(session_id: str, user_id: int) -> None:
+    ensure_session(session_id)
+    conn = get_conn()
+    conn.execute(
+        "UPDATE sessions SET user_id = ?, last_active = CURRENT_TIMESTAMP WHERE id = ?",
+        (user_id, session_id),
+    )
+    # Backfill any existing orders/cart with the new user_id
+    conn.execute("UPDATE orders SET user_id = ? WHERE session_id = ? AND user_id IS NULL", (user_id, session_id))
+    conn.execute("UPDATE cart_items SET user_id = ? WHERE session_id = ? AND user_id IS NULL", (user_id, session_id))
+    conn.commit()
+
+
+def unbind_session_user(session_id: str) -> None:
+    conn = get_conn()
+    conn.execute("UPDATE sessions SET user_id = NULL WHERE id = ?", (session_id,))
+    conn.commit()
+
+
+def get_user_by_session(session_id: str) -> dict | None:
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT u.id, u.name, u.email FROM sessions s
+           JOIN users u ON u.id = s.user_id
+           WHERE s.id = ?""",
+        (session_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# ── Product view tracking ──────────────────────────────────────────────────
+
+def log_product_view(session_id: str, product_id: int, search_query: str | None = None) -> None:
+    ensure_session(session_id)
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO product_views (session_id, product_id, search_query) VALUES (?, ?, ?)",
+        (session_id, product_id, search_query),
+    )
+    conn.commit()
+
+
+# ── Orders: status update + logistics view ────────────────────────────────
+
+_ALLOWED_STATUSES = {"processing", "shipped", "in_transit"}
+
+
+def update_order_status(order_id: int, status: str) -> bool:
+    if status not in _ALLOWED_STATUSES:
+        raise ValueError(f"status must be one of {sorted(_ALLOWED_STATUSES)}")
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, order_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_logistics_rows(limit: int = 20) -> list[dict]:
+    """Recent orders joined with users, ready for the Active Logistics table."""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT o.id AS order_id,
+                  o.product_name,
+                  o.quantity,
+                  (o.price * o.quantity) AS revenue,
+                  o.status,
+                  o.created_at,
+                  COALESCE(u.name, 'Guest') AS user_name,
+                  COALESCE(u.email, '') AS user_email
+           FROM orders o
+           LEFT JOIN users u ON u.id = o.user_id
+           ORDER BY o.created_at DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Daily signals for ML forecasting ───────────────────────────────────────
+
+def get_daily_signals(days: int = 90) -> list[dict]:
+    """Per-day combined signals: orders revenue/units, cart adds, product views."""
+    conn = get_conn()
+    since = f"-{days} days"
+    rows = conn.execute(
+        """WITH o AS (
+             SELECT DATE(created_at) AS date,
+                    SUM(price*quantity) AS revenue,
+                    SUM(quantity) AS units
+             FROM orders WHERE created_at >= CURRENT_DATE + (?)::interval
+             GROUP BY DATE(created_at)
+           ),
+           c AS (
+             SELECT DATE(created_at) AS date, COUNT(*) AS cart_adds
+             FROM cart_items WHERE created_at >= CURRENT_DATE + (?)::interval
+             GROUP BY DATE(created_at)
+           ),
+           v AS (
+             SELECT DATE(viewed_at) AS date, COUNT(*) AS views
+             FROM product_views WHERE viewed_at >= CURRENT_DATE + (?)::interval
+             GROUP BY DATE(viewed_at)
+           )
+           SELECT DISTINCT date FROM (
+             SELECT date FROM o UNION SELECT date FROM c UNION SELECT date FROM v
+           ) WHERE date IS NOT NULL ORDER BY date""",
+        (since, since, since),
+    ).fetchall()
+    dates = [r["date"] for r in rows]
+    if not dates:
+        return []
+
+    rev_map = {
+        r["date"]: dict(r)
+        for r in conn.execute(
+            """SELECT DATE(created_at) AS date,
+                      SUM(price*quantity) AS revenue,
+                      SUM(quantity) AS units
+               FROM orders WHERE created_at >= CURRENT_DATE + (?)::interval
+               GROUP BY DATE(created_at)""",
+            (since,),
+        ).fetchall()
+    }
+    cart_map = {
+        r["date"]: r["cart_adds"]
+        for r in conn.execute(
+            """SELECT DATE(created_at) AS date, COUNT(*) AS cart_adds
+               FROM cart_items WHERE created_at >= CURRENT_DATE + (?)::interval
+               GROUP BY DATE(created_at)""",
+            (since,),
+        ).fetchall()
+    }
+    view_map = {
+        r["date"]: r["views"]
+        for r in conn.execute(
+            """SELECT DATE(viewed_at) AS date, COUNT(*) AS views
+               FROM product_views WHERE viewed_at >= CURRENT_DATE + (?)::interval
+               GROUP BY DATE(viewed_at)""",
+            (since,),
+        ).fetchall()
+    }
+
+    out = []
+    for d in dates:
+        o = rev_map.get(d, {})
+        out.append({
+            "date": d,
+            "revenue": float(o.get("revenue") or 0),
+            "units": int(o.get("units") or 0),
+            "cart_adds": int(cart_map.get(d, 0)),
+            "views": int(view_map.get(d, 0)),
+        })
+    return out
+
+
+def get_product_signals(days: int = 30) -> list[dict]:
+    """Per-product signals over the last N days for Trending Collections."""
+    conn = get_conn()
+    since = f"-{days} days"
+    rows = conn.execute(
+        """SELECT p.id AS product_id,
+                  p.name, p.category, p.price, p.image_path,
+                  COALESCE(SUM(o.quantity), 0) AS orders_units,
+                  COALESCE((SELECT COUNT(*) FROM cart_items c
+                            WHERE c.product_id = p.id
+                              AND c.created_at >= CURRENT_DATE + (?)::interval), 0) AS cart_adds,
+                  COALESCE((SELECT COUNT(*) FROM product_views v
+                            WHERE v.product_id = p.id
+                              AND v.viewed_at >= CURRENT_DATE + (?)::interval), 0) AS views
+           FROM products p
+           LEFT JOIN orders o
+             ON o.product_id = p.id AND o.created_at >= CURRENT_DATE + (?)::interval
+           GROUP BY p.id""",
+        (since, since, since),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_customer_count() -> int:
+    """Distinct customers = users rows + guest sessions that placed orders."""
+    conn = get_conn()
+    users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    guests = conn.execute(
+        "SELECT COUNT(DISTINCT session_id) FROM orders WHERE user_id IS NULL"
+    ).fetchone()[0]
+    return int(users) + int(guests)
+
+
+def get_revenue_for_day(days_ago: int = 0) -> float:
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT COALESCE(SUM(price*quantity), 0) AS rev FROM orders
+           WHERE DATE(created_at) = (CURRENT_DATE + (?)::interval)::date""",
+        (f"-{days_ago} days",),
+    ).fetchone()
+    return float(row["rev"] or 0)

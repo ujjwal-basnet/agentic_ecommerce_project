@@ -1,64 +1,69 @@
-"""Google Gemini LLM wrapper with simple call_llm function."""
+"""Google Gemini LLM wrapper — sync + async calls."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from google.oauth2 import service_account
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 
 import config
 
-
-# Shared model instance
+_MODEL = config.GEMINI_MODEL
 _chat_model: ChatGoogleGenerativeAI | None = None
 
 
+def _vertex_credentials() -> service_account.Credentials:
+    credentials_path = Path(config.GOOGLE_APPLICATION_CREDENTIALS).expanduser()
+    if not credentials_path.exists():
+        raise FileNotFoundError(
+            f"Google service account file not found: {credentials_path}"
+        )
+    return service_account.Credentials.from_service_account_file(
+        credentials_path,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+
+
 def _get_model() -> ChatGoogleGenerativeAI:
-    """Get or create shared chat model."""
     global _chat_model
     if _chat_model is None:
-        _chat_model = ChatGoogleGenerativeAI(
-            model=config.GEMINI_MODEL,
-            api_key=config.GOOGLE_API_KEY,
-            temperature=0.7,
-            max_retries=2,
-        )
+        if config.GOOGLE_GENAI_USE_VERTEXAI:
+            _chat_model = ChatGoogleGenerativeAI(
+                model=_MODEL,
+                credentials=_vertex_credentials(),
+                project=config.GOOGLE_CLOUD_PROJECT,
+                location=config.GOOGLE_CLOUD_LOCATION,
+                vertexai=True,
+                temperature=0.2,
+            )
+        else:
+            _chat_model = ChatGoogleGenerativeAI(
+                model=_MODEL,
+                api_key=config.GOOGLE_API_KEY,
+                vertexai=False,
+                temperature=0.2,
+            )
     return _chat_model
 
 
-def call_llm(
-    system: str,
-    user: str,
-    *,
-    schema: type[BaseModel] | None = None,
-    temperature: float | None = None,
-) -> str | BaseModel:
-    """Call LLM with system and user messages.
+def _messages(system: str, user: str):
+    return [SystemMessage(system), HumanMessage(user)]
 
-    Args:
-        system: System prompt.
-        user: User message.
-        schema: If provided, return structured output as Pydantic model.
-        temperature: Override default temperature.
 
-    Returns:
-        str if no schema, or Pydantic model instance if schema given.
-    """
+def call_llm(system, user, *, schema: type[BaseModel] | None = None):
     model = _get_model()
-
-    if temperature is not None:
-        model = ChatGoogleGenerativeAI(
-            model=config.GEMINI_MODEL,
-            api_key=config.GOOGLE_API_KEY,
-            temperature=temperature,
-            max_retries=2,
-        )
-
-    messages = [SystemMessage(system), HumanMessage(user)]
-
     if schema:
-        structured = model.with_structured_output(schema)
-        return structured.invoke(messages)
+        return model.with_structured_output(schema).invoke(_messages(system, user))
+    return str(model.invoke(_messages(system, user)).content)
 
-    response = model.invoke(messages)
-    return str(response.content)
+
+async def acall_llm(system, user, *, schema: type[BaseModel] | None = None):
+    """Async variant — uses native ainvoke (no thread pool needed)."""
+    model = _get_model()
+    if schema:
+        return await model.with_structured_output(schema).ainvoke(_messages(system, user))
+    resp = await model.ainvoke(_messages(system, user))
+    return str(resp.content)
