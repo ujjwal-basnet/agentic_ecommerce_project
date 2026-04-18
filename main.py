@@ -24,10 +24,28 @@ from routes.tracking import router as tracking_router
 from schemas import RootResponse
 from mcp_server import mcp_app
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+from datetime import datetime, timezone, timedelta
+
+_NPT = timezone(timedelta(hours=5, minutes=45))
+
+
+class _NptFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=_NPT)
+        return dt.strftime("%b %-d, %-I:%M:%S%p").lower()  # e.g. "apr 18, 2:30:45am"
+
+
+def _setup_logging():
+    fmt = _NptFormatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
+    handler = logging.StreamHandler()
+    handler.setFormatter(fmt)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(handler)
+
+
+_setup_logging()
 logger = logging.getLogger(__name__)
 
 
