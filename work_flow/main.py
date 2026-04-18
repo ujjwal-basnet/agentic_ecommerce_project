@@ -20,13 +20,11 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
 
-from wf_config import APP_SECRET, VERIFY_TOKEN, DM_FALLBACK_REPLY, COMMENT_FALLBACK_REPLY
+from config import APP_SECRET, VERIFY_TOKEN, DM_FALLBACK_REPLY, COMMENT_FALLBACK_REPLY
 
 # Local modules
 import instagram_api
-import ngrok_updater
 import scheduler
 import token_manager
 
@@ -38,35 +36,23 @@ log = logging.getLogger("workflow.webhook")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
-
-
-class NgrokMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["ngrok-skip-browser-warning"] = "true"
-        return response
-
-
-app.add_middleware(NgrokMiddleware)
 app.mount("/static", StaticFiles(directory=os.path.join(_WF_DIR, "static")), name="static")
 
 
 # ── AI reply helpers ──────────────────────────────────────────────────────────
 
 async def _ai_dm_reply(platform: str, sender_id: str, text: str) -> str:
-    """Generate a DM reply via the main planner/engine. Falls back on error."""
     session_id = f"{'ig' if platform == 'instagram' else 'fb'}_{sender_id}"
     try:
         database.ensure_session(session_id)
         reply = await engine.run_text(text, session_id=session_id)
-        return (reply or DM_FALLBACK_REPLY)[:2000]  # Meta DM limit
+        return (reply or DM_FALLBACK_REPLY)[:2000]
     except Exception:
         log.exception("engine.run_text failed for %s/%s", platform, sender_id)
         return DM_FALLBACK_REPLY
 
 
 async def _ai_comment_reply(comment_id: str, comment_text: str) -> str:
-    """Generate a short, public-safe comment reply via the engine."""
     session_id = f"comment_{comment_id}"
     prompt = (
         f"A user left this public comment on our post: {comment_text!r}. "
@@ -85,13 +71,10 @@ async def _ai_comment_reply(comment_id: str, comment_text: str) -> str:
 
 @app.on_event("startup")
 def start_background_workers():
-    # 1. Ngrok URL watcher — checks every 60s, updates Meta if URL changed
-    threading.Thread(target=ngrok_updater.run_loop, args=(60,), daemon=True).start()
-
-    # 2. Post scheduler — checks every 60s for due posts
+    # Post scheduler — checks every 60s for due posts
     threading.Thread(target=scheduler.run_loop, args=(60,), daemon=True).start()
 
-    # 3. Token refresh — checks every 24 hours
+    # Token refresh — checks every 24 hours
     def token_refresh_loop():
         import time
         while True:
@@ -138,7 +121,7 @@ async def receive_webhook(request: Request):
 
     print(f"[webhook] Event received: {json.dumps(payload, indent=2)}")
 
-    platform = payload.get("object", "page")  # "page" = Facebook, "instagram" = Instagram
+    platform = payload.get("object", "page")
     platform_key = "instagram" if platform == "instagram" else "facebook"
 
     for entry in payload.get("entry", []):
@@ -172,10 +155,6 @@ async def receive_webhook(request: Request):
 
 @app.post("/schedule-post")
 async def schedule_post_endpoint(request: Request):
-    """
-    Schedule a post via HTTP.
-    Body: { "image_url": "...", "caption": "...", "scheduled_time": "YYYY-MM-DD HH:MM:SS" }
-    """
     data = await request.json()
     image_url = data.get("image_url")
     caption = data.get("caption", "")
@@ -188,14 +167,11 @@ async def schedule_post_endpoint(request: Request):
 
 @app.get("/status")
 async def status():
-    """Health check — shows token age and pending posts."""
     store = token_manager._load_store()
     posts = scheduler._load_posts()
     pending = [p for p in posts if p["status"] == "pending"]
-    ngrok_url = ngrok_updater.get_ngrok_url()
     return {
         "server": "running",
-        "ngrok_url": ngrok_url,
         "token_saved_at": store.get("saved_at"),
         "pending_posts": len(pending),
         "ai_engine": "enabled",

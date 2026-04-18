@@ -10,7 +10,8 @@ import json
 import os
 import time
 import requests
-from wf_config import APP_ID, APP_SECRET, GRAPH_API_BASE, ACCESS_TOKEN
+import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import APP_ID, APP_SECRET, GRAPH_API_BASE, ACCESS_TOKEN
 
 TOKEN_FILE = os.path.join(os.path.dirname(__file__), "token_store.json")
 

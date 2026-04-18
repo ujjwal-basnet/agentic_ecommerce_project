@@ -8,8 +8,9 @@ Instagram Graph API helpers
 - publish_post(creation_id)
 """
 
+import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
-from wf_config import APP_ID, APP_SECRET, IG_USER_ID, FB_PAGE_ID, VERIFY_TOKEN, GRAPH_API_BASE
+from config import APP_ID, APP_SECRET, IG_USER_ID, FB_PAGE_ID, VERIFY_TOKEN, GRAPH_API_BASE
 from token_manager import get_token
 
 

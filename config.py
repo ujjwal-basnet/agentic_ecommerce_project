@@ -48,7 +48,7 @@ TRYON_DIR = os.getenv("TRYON_DIR", "data/tryon")
 CAMPAIGN_DIR = os.getenv("CAMPAIGN_DIR", "data/campaigns")
 
 # Public base URL — used by Facebook/Instagram Graph API (which fetch images by URL).
-# Set this to your ngrok https URL when deploying campaigns locally.
+# Set this to your Render (or production) HTTPS URL.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 
 # Nano Banana / Gemini image generation.
@@ -66,6 +66,7 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN") or META_ACCESS_TOKEN
 FB_GRAPH_VERSION = os.getenv("FB_GRAPH_VERSION", "v24.0")
 FB_VERIFY_TOKEN = os.getenv("FB_VERIFY_TOKEN", META_VERIFY_TOKEN)
+GRAPH_API_BASE = f"https://graph.facebook.com/{FB_GRAPH_VERSION}"
 
 # Instagram Business Account
 IG_USER_ID = os.getenv("IG_USER_ID", "")
@@ -74,6 +75,14 @@ IG_VERIFY_TOKEN = os.getenv("IG_VERIFY_TOKEN", META_VERIFY_TOKEN)
 # Auto-reply messages
 DM_AUTO_REPLY = os.getenv("DM_AUTO_REPLY", "Thanks for your message! We'll get back to you soon.")
 COMMENT_AUTO_REPLY = os.getenv("COMMENT_AUTO_REPLY", "Thanks for your comment! 🙌")
+DM_FALLBACK_REPLY = os.getenv("DM_FALLBACK_REPLY", DM_AUTO_REPLY)
+COMMENT_FALLBACK_REPLY = os.getenv("COMMENT_FALLBACK_REPLY", COMMENT_AUTO_REPLY)
+
+# Short-name aliases for work_flow compatibility
+APP_ID = META_APP_ID
+APP_SECRET = META_APP_SECRET
+VERIFY_TOKEN = META_VERIFY_TOKEN
+ACCESS_TOKEN = META_ACCESS_TOKEN
 
 # WhatsApp Business API
 WHATSAPP_API_TOKEN = os.getenv("WHATSAPP_API_TOKEN", "")

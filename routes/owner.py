@@ -276,7 +276,7 @@ async def campaign_launch(
     if not base:
         raise HTTPException(
             status_code=400,
-            detail="PUBLIC_BASE_URL not configured. Set it to your public https URL (e.g. your ngrok) so Facebook/Instagram can fetch the image.",
+            detail="PUBLIC_BASE_URL not configured. Set it to your Render (or production) HTTPS URL so Facebook/Instagram can fetch the image.",
         )
     image_url = f"{base}/data/campaigns/{p.name}"
 

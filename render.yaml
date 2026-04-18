@@ -8,10 +8,18 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+
+      # ── Database ──────────────────────────────────────────────────────────
+      # Leave DATABASE_URL blank to use local SQLite (ephemeral on Render free tier).
+      # For persistence, set to a PostgreSQL connection string (Render Postgres, Supabase, etc.)
       - key: DATABASE_URL
         sync: false
       - key: DB_SSLMODE
         value: require
+      - key: DB_PATH
+        value: /tmp/smartshop.db
+
+      # ── File paths ────────────────────────────────────────────────────────
       - key: PRODUCT_IMAGES_DIR
         value: data/products
       - key: USER_UPLOADS_DIR
@@ -22,14 +30,26 @@ services:
         value: data/campaigns
       - key: PROTOCOL_LOG_PATH
         value: logs/protocol_log.jsonl
-      - key: MCP_BEARER_TOKEN
-        sync: false
+
+      # ── Public URL (set AFTER first deploy to your Render URL) ────────────
       - key: PUBLIC_BASE_URL
         sync: false
+
+      # ── MCP server ────────────────────────────────────────────────────────
+      - key: MCP_BEARER_TOKEN
+        sync: false
+
+      # ── Google Gemini (API key mode — no Vertex AI) ───────────────────────
       - key: GOOGLE_API_KEY
         sync: false
       - key: GOOGLE_GENAI_USE_VERTEXAI
         value: "false"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_IMAGE_MODEL
+        value: gemini-2.5-flash-image
+
+      # ── Meta / Facebook / Instagram ───────────────────────────────────────
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET
@@ -50,7 +70,17 @@ services:
         sync: false
       - key: IG_VERIFY_TOKEN
         sync: false
+
+      # ── Channel flags ─────────────────────────────────────────────────────
       - key: ENABLE_FB_MESSENGER
         value: "true"
       - key: ENABLE_INSTAGRAM
         value: "true"
+      - key: ENABLE_WHATSAPP
+        value: "false"
+
+      # ── Fallback reply messages ───────────────────────────────────────────
+      - key: DM_FALLBACK_REPLY
+        value: "Sorry, I hit a snag. Please try again in a moment."
+      - key: COMMENT_FALLBACK_REPLY
+        value: "Thanks for reaching out! We'll follow up shortly."
