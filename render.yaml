@@ -10,14 +10,11 @@ services:
         value: 3.11.9
 
       # ── Database ──────────────────────────────────────────────────────────
-      # Leave DATABASE_URL blank to use local SQLite (ephemeral on Render free tier).
-      # For persistence, set to a PostgreSQL connection string (Render Postgres, Supabase, etc.)
+      # Your external PostgreSQL connection string (Supabase, Neon, etc.)
       - key: DATABASE_URL
         sync: false
       - key: DB_SSLMODE
         value: require
-      - key: DB_PATH
-        value: /tmp/smartshop.db
 
       # ── File paths ────────────────────────────────────────────────────────
       - key: PRODUCT_IMAGES_DIR
