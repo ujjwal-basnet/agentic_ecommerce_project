@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form
 import database
-from agents.tools import perform_virtual_try_on
+from tools import perform_virtual_try_on
 from schemas import SocialPostResponse, TryOnResponse
 
 router = APIRouter(prefix="/specialist", tags=["specialist"])

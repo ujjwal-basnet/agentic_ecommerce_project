@@ -1,7 +1,4 @@
-"""LangChain tools for SmartShop agents.
-
-Each tool is a function that does one thing. Agents are collections of tools.
-"""
+"""LangChain tool functions for SmartShop — pure Python callables."""
 
 from __future__ import annotations
 
@@ -10,6 +7,7 @@ import logging
 
 from langchain_core.tools import tool
 
+import analytics_ml
 import database
 import config
 
@@ -46,12 +44,18 @@ def get_all_products() -> str:
 
 
 @tool
-def search_products(query: str, limit: int = 8, max_price: float = None, color: str = None, category: str = None) -> str:
-    """Search products with filters. Handles keywords, price ranges, colors, categories.
+def search_products(
+    query: str = "",
+    limit: int = 8,
+    max_price: float | None = None,
+    color: str | None = None,
+    category: str | None = None,
+) -> str:
+    """Search products with optional filters. All params optional — empty query returns all in-stock products, then filters apply.
 
     Examples:
     - "red shirt" → query="red shirt"
-    - "under 2000" → max_price=2000
+    - "under 2000" → max_price=2000  (no query needed)
     - "red shirt under 2000" → query="red shirt", max_price=2000
     """
     try:
@@ -109,6 +113,35 @@ def get_product_by_id(product_id: int) -> str:
 
 
 @tool
+def get_products_by_ids(product_ids: list[int]) -> str:
+    """Fetch full DB records for a list of product IDs. Use this when the planner
+    already picked specific products from the catalog. Returns {products: [...]}."""
+    try:
+        products = []
+        missing = []
+        for pid in product_ids:
+            p = database.get_product_by_id(int(pid))
+            if not p:
+                missing.append(int(pid))
+                continue
+            products.append({
+                "id": p.get("id"),
+                "name": p.get("name"),
+                "category": p.get("category"),
+                "color": p.get("color"),
+                "price": float(p.get("price", 0)),
+                "quantity": int(p.get("quantity", 0)),
+                "description": p.get("description", ""),
+                "image_path": p.get("image_path", ""),
+                "is_wearable": bool(p.get("is_wearable", 0)),
+            })
+        return json.dumps({"products": products, "count": len(products), "missing": missing})
+    except Exception:
+        logger.exception("get_products_by_ids failed")
+        raise
+
+
+@tool
 def get_products_by_category(category: str) -> str:
     """Get all products in a specific category."""
     try:
@@ -155,31 +188,43 @@ def view_cart(session_id: str) -> str:
 
 
 @tool
-def add_to_cart(session_id: str, product_name: str, quantity: int = 1) -> str:
-    """Add a product to cart. Finds product price automatically."""
+def add_to_cart(
+    session_id: str,
+    product_id: int | None = None,
+    product_name: str | None = None,
+    quantity: int = 1,
+) -> str:
+    """Add a product to cart. Prefer product_id (from Catalog); product_name is a fallback."""
     try:
-        # Look up product to get price
-        prod = database.get_product_by_name(product_name)
+        prod = None
+        if product_id is not None:
+            prod = database.get_product_by_id(int(product_id))
+        if prod is None and product_name:
+            prod = database.get_product_by_name(product_name)
         if not prod:
+            ref = f"id={product_id}" if product_id is not None else f"'{product_name}'"
             return json.dumps({
                 "success": False,
-                "error": f"Product '{product_name}' not found",
-                "message": f"I couldn't find '{product_name}' in the catalog.",
+                "error": f"Product {ref} not found",
+                "message": f"I couldn't find that product ({ref}) in the catalog.",
             })
-        
+
         price = float(prod.get("price", 0))
         database.db_add_to_cart(session_id, prod["name"], price, quantity, product_id=prod.get("id"))
-        
-        # Return updated cart
+        analytics_ml.invalidate_cache()
+
         cart = database.db_get_cart(session_id)
         count, total = database.cart_totals(cart)
         message = f"Added {quantity} x {prod['name']} to your cart."
-        
+
         return json.dumps({
             "success": True,
             "message": message,
             "text": message,
             "added": prod["name"],
+            "product_id": prod.get("id"),
+            "price": price,
+            "image_path": prod.get("image_path", ""),
             "quantity": quantity,
             "count": count,
             "total": total,
@@ -194,19 +239,38 @@ def add_to_cart(session_id: str, product_name: str, quantity: int = 1) -> str:
 
 
 @tool
-def remove_from_cart(session_id: str, product_name: str) -> str:
-    """Remove a product from cart."""
+def remove_from_cart(
+    session_id: str,
+    product_id: int | None = None,
+    product_name: str | None = None,
+) -> str:
+    """Remove a product from cart. Prefer product_id (from Catalog); product_name is a fallback."""
     try:
-        database.db_remove_from_cart(session_id, product_name)
+        removed_name = product_name
+        if product_id is not None:
+            prod = database.get_product_by_id(int(product_id))
+            if prod:
+                removed_name = prod["name"]
+
+        if not removed_name:
+            return json.dumps({
+                "success": False,
+                "error": "No product_id or product_name provided",
+                "message": "I need to know which product to remove.",
+            })
+
+        database.db_remove_from_cart(session_id, removed_name)
+        analytics_ml.invalidate_cache()
         cart = database.db_get_cart(session_id)
         count, total = database.cart_totals(cart)
-        message = f"Removed {product_name} from your cart."
-        
+        message = f"Removed {removed_name} from your cart."
+
         return json.dumps({
             "success": True,
             "message": message,
             "text": message,
-            "removed": product_name,
+            "removed": removed_name,
+            "product_id": product_id,
             "count": count,
             "total": total,
             "cart_count": count,
@@ -333,22 +397,25 @@ def get_weather(location: str = "Kathmandu") -> str:
 # ───────────────────────────────────────────────────────────────────────────────
 
 @tool
-def check_try_on_eligible(product_name: str) -> str:
-    """Check if a product is eligible for virtual try-on."""
+def check_try_on_eligible(
+    product_id: int | None = None,
+    product_name: str | None = None,
+) -> str:
+    """Check if a product is eligible for virtual try-on. Prefer product_id."""
     try:
-        prod = database.get_product_by_name(product_name)
+        prod = None
+        if product_id is not None:
+            prod = database.get_product_by_id(int(product_id))
+        if prod is None and product_name:
+            prod = database.get_product_by_name(product_name)
+            if prod is None:
+                products = database.search_products(product_name, limit=5)
+                prod = next((p for p in products if p.get("is_wearable")), None) or (products[0] if products else None)
+
         if not prod:
-            # Try searching
-            products = database.search_products(product_name, limit=5)
-            wearable = [p for p in products if p.get("is_wearable")]
-            if wearable:
-                prod = wearable[0]
-            elif products:
-                prod = products[0]
-        
-        if not prod:
-            return json.dumps({"eligible": False, "error": f"Product '{product_name}' not found"})
-        
+            ref = f"id={product_id}" if product_id is not None else f"'{product_name}'"
+            return json.dumps({"eligible": False, "error": f"Product {ref} not found"})
+
         is_wearable = bool(prod.get("is_wearable", 0))
         return json.dumps({
             "eligible": is_wearable,
@@ -363,61 +430,104 @@ def check_try_on_eligible(product_name: str) -> str:
 
 @tool
 def perform_virtual_try_on(product_id: int, user_image_path: str) -> str:
-    """Perform virtual try-on using nanobanan model (fast virtual try-on)."""
+    """Perform virtual try-on — composes the user's photo with the product via Gemini image model."""
     try:
         from pathlib import Path
         import uuid
-        import requests
-        
-        # Validate inputs
+
         if not user_image_path or not Path(user_image_path).exists():
             return json.dumps({
                 "success": False,
                 "error": "User photo not found. Please upload a photo first.",
             })
-        
-        # Get product
+
         product = database.get_product_by_id(product_id)
         if not product:
             return json.dumps({"success": False, "error": f"Product #{product_id} not found"})
-        
+
         product_image_path = product.get("image_path", "")
         if not product_image_path or not Path(product_image_path).exists():
             return json.dumps({"success": False, "error": f"No image for '{product['name']}'"})
-        
-        # Use nanobanan for virtual try-on
-        # TODO: Replace with your actual nanobanan API endpoint
-        # Example: POST to nanobanan API with person_img + cloth_img
-        
+
+        from google import genai
+        from google.oauth2 import service_account
+        from PIL import Image
+
+        if config.GOOGLE_GENAI_USE_VERTEXAI:
+            creds = service_account.Credentials.from_service_account_file(
+                str(Path(config.GOOGLE_APPLICATION_CREDENTIALS).expanduser()),
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            client = genai.Client(
+                vertexai=True,
+                project=config.GOOGLE_CLOUD_PROJECT,
+                location=config.GOOGLE_CLOUD_LOCATION,
+                credentials=creds,
+            )
+        else:
+            client = genai.Client(api_key=config.GOOGLE_API_KEY)
+
+        user_img = Image.open(user_image_path)
+        product_img = Image.open(product_image_path)
+
+        category = (product.get("category") or "").lower()
+        name = product.get("name") or "product"
+        color = product.get("color") or ""
+        if any(k in category for k in ("shirt", "tshirt", "t-shirt", "top", "jacket", "hoodie", "sweater", "dress")):
+            action = "wearing the garment on their torso"
+        elif any(k in category for k in ("pant", "trouser", "jean", "short", "skirt")):
+            action = "wearing the garment on their lower body"
+        elif any(k in category for k in ("shoe", "sneaker", "boot", "sandal")):
+            action = "wearing the footwear"
+        elif any(k in category for k in ("watch", "bracelet", "ring", "necklace", "jewel")):
+            action = "wearing the accessory"
+        elif any(k in category for k in ("hat", "cap", "beanie")):
+            action = "wearing the headwear"
+        elif any(k in category for k in ("bag", "purse", "backpack")):
+            action = "holding or wearing the bag"
+        elif any(k in category for k in ("glass", "sunglass", "eyewear")):
+            action = "wearing the eyewear"
+        else:
+            action = "using or wearing the product naturally"
+
+        prompt = (
+            f"Compose a photorealistic virtual try-on image. Show the exact same person from the USER reference "
+            f"{action} — specifically the {color + ' ' if color else ''}{name} from the PRODUCT reference. "
+            "Preserve the person's face, skin tone, hair, body proportions, pose, and background as closely as "
+            "possible. Replace or overlay only the relevant clothing/item area with the product, matching "
+            "realistic fabric drape, lighting, and shadows. Output a single clean photograph, no text, no "
+            "watermarks, no collage."
+        )
+
+        response = client.models.generate_content(
+            model=config.NANO_BANANA_MODEL,
+            contents=[prompt, user_img, product_img],
+        )
+
         output_dir = Path(config.TRYON_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         out_path = output_dir / f"tryon_{uuid.uuid4().hex[:8]}.png"
-        
-        # Placeholder: Copy user image as mock result
-        # Replace this block with actual nanobanan API call:
-        # 
-        # with open(user_image_path, "rb") as f_person, \
-        #      open(product_image_path, "rb") as f_cloth:
-        #     resp = requests.post(
-        #         "https://your-nanobanan-api.com/tryon",
-        #         files={"person": f_person, "cloth": f_cloth},
-        #         timeout=60
-        #     )
-        #     out_path.write_bytes(resp.content)
-        
-        # For now, return mock success
-        import shutil
-        shutil.copy(user_image_path, out_path)
-        
+
+        for cand in response.candidates or []:
+            parts = getattr(cand.content, "parts", []) or []
+            for part in parts:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    out_path.write_bytes(inline.data)
+                    return json.dumps({
+                        "success": True,
+                        "image_path": str(out_path),
+                        "message": f"Try-on generated for {name}",
+                        "model": config.NANO_BANANA_MODEL,
+                    })
+
         return json.dumps({
-            "success": True,
-            "image_path": str(out_path),
-            "message": "Try-on completed with Nano Banana",
-            "model": config.NANO_BANANA_MODEL,
+            "success": False,
+            "error": "Image model returned no image data. Try a different photo.",
         })
-    except Exception:
+    except Exception as e:
         logger.exception("perform_virtual_try_on failed")
-        raise
+        return json.dumps({"success": False, "error": f"Try-on failed: {e}"})
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -428,6 +538,7 @@ PRODUCT_TOOLS = [
     get_all_products,
     search_products,
     get_product_by_id,
+    get_products_by_ids,
     get_products_by_category,
 ]
 

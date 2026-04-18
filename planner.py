@@ -1,7 +1,6 @@
-"""Planner — LLM planner that returns structured tool calls."""
+"""Planner — LLM call that decides intent + tool calls."""
 
 from __future__ import annotations
-
 import logging
 
 import llm
@@ -9,59 +8,51 @@ from registry import get_registry
 from schemas import PlannerOutput
 
 logger = logging.getLogger(__name__)
+_SYSTEM = """Planner for SmartShop. Pick intent and the smallest safe tool plan.
 
+CATALOG (primary product index; use ids from here):
+{catalog}
 
-_SYSTEM = """You are the Planner for SmartShop.
-
-Your job: decide intent and tool calls for each user query.
-
-AVAILABLE TOOLS:
+TOOLS:
 {registry}
 
-OUTPUT FORMAT:
-Return a JSON object with this shape:
-{{
-  "intent": "smalltalk|shopping|cart|weather|tryon|other",
-  "direct_response": "string or null",
-  "tool_calls": [
-    {{"tool": "tool_name", "args": {{"key": "value"}}}}
-  ]
-}}
+Rules:
+- Greetings/chitchat: direct_response only.
+- Current user constraints override recent conversation. Use recent conversation only to resolve clear references like "that one", "second one", or "same budget"; do not carry over previous product topics unless the user asks for them.
+- For any product browsing, advice, recommendation, category, color, budget, or filter request, resolve matching Catalog IDs from products.md and call get_products_by_ids([...]).
+- Treat "wear", "wearable", "clothes", "clothing", and "outfit" as a hard clothing constraint. Only return clothing/wearable Catalog items. Do not include drinks, snacks, electronics, or accessories unless the user explicitly asks for that accessory.
+- Apply budget and price constraints strictly. "Under 1000" means every selected product must cost <= 1000.
+- Example: "something to wear under 1000" -> get_products_by_ids([6, 9]).
+- Do not use search_products, get_all_products, or get_products_by_category for normal product matching. products.md is the product index; use get_products_by_ids with the IDs you selected from it.
+- For "show everything" or "all products", call get_products_by_ids with all Catalog IDs.
+- Cart actions: use add_to_cart/remove_from_cart/view_cart/clear_cart. Pass product_id only when the product is clear from the Catalog or recent context; otherwise ask a short clarification with direct_response.
+- Try-on: for clothing (tshirt/shirt/jeans/kurti), call perform_virtual_try_on with product_id directly when a user photo is available; ask for the missing photo/product when needed.
+- Never invent product IDs. Only use IDs from the Catalog.
+- Keep tool_calls minimal (1-2 tools max)."""
 
-RULES:
-1. Greetings/chitchat: set direct_response and keep tool_calls empty.
-2. Tool tasks: keep direct_response null and fill tool_calls.
-3. Never invent tools — use only from list above.
-4. Keep tool_calls minimal and relevant.
-"""
-
-
-def create_plan(
+async def create_plan(
     query: str,
     session_id: str,
     channel: str = "web",
     context: str = "",
 ) -> PlannerOutput:
-    """Generate a structured execution plan from user input."""
     registry = get_registry()
-    registry_text = registry.get_planner_prompt_text()
+    system = _SYSTEM.format(
+        catalog=registry.get_product_catalog_text() or "(catalog unavailable)",
+        registry=registry.get_planner_prompt_text(),
+    )
 
-    system = _SYSTEM.format(registry=registry_text)
-    user_parts = []
+    parts = []
     if context:
-        user_parts.append(f"Context:\n{context}")
-    user_parts.append(f"Session: {session_id}")
-    user_parts.append(f"Channel: {channel}")
-    user_parts.append(f"Query: {query}")
-    user_msg = "\n\n".join(user_parts)
+        parts.append(f"Context:\n{context}")
+    parts.append(f"Channel: {channel}\nQuery: {query}")
+    user = "\n\n".join(parts)
 
     try:
-        plan = llm.call_llm(system, user_msg, schema=PlannerOutput)
+        plan = await llm.acall_llm(system, user, schema=PlannerOutput)
         logger.info(
             "plan session=%s intent=%s direct=%s tools=%s",
-            session_id,
-            plan.intent,
-            bool(plan.direct_response),
+            session_id, plan.intent, bool(plan.direct_response),
             [tc.tool for tc in plan.tool_calls],
         )
         return plan

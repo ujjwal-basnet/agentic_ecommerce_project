@@ -1,8 +1,6 @@
-"""Engine — One entry point for all queries.
+"""Engine — one entry point for all queries.
 
-Flow: Context enrichment → Plan (LLM #1) → Execute tools (no LLM) → Generate response (LLM #2)
-Greetings/small talk: 1 LLM call (planner returns direct_response)
-Tool queries: 2 LLM calls (planner + response generator)
+Flow: resolve follow-up → plan → execute tools → text → component from registry
 """
 
 from __future__ import annotations
@@ -15,14 +13,31 @@ from datetime import datetime
 from pathlib import Path
 
 import database
+import llm
 import session_memory
-from thread_pool import run_in_thread
 from planner import create_plan
 from executor import execute_tools
-from response_generator import generate_response
+from response_generator import generate_text
+from registry import get_registry
+from schemas import QueryResolution
 from config import PROTOCOL_LOG_PATH
 
 logger = logging.getLogger(__name__)
+
+_QUERY_RESOLUTION_SYSTEM = """You rewrite ecommerce follow-up queries into standalone queries.
+
+Use the recent conversation only when the current query is incomplete.
+If the current query is already clear, return it unchanged.
+
+Rules:
+- Do not answer the user.
+- Do not add products, emotions, life situations, or old topics unless the current query clearly refers to them.
+- Do not carry over old breakup/bored/thirsty context into a fresh product query.
+- Do not invent product names, product IDs, variants, or colors that are not explicitly stated.
+- When the user changes a filter like color, budget, or price, keep the product type/category from history but not the exact previous product name.
+- Example: history says "red shirts", current query says "do you have in blue" -> rewritten query "show me blue shirts".
+- Preserve the user's current constraints such as category, color, budget, and action.
+- Return a rewritten query that the shopping planner can understand without chat history."""
 
 
 def _log(event: str, **kwargs):
@@ -33,44 +48,76 @@ def _log(event: str, **kwargs):
     logger.info("protocol.%s %s", event, kwargs)
 
 
-def _build_output(response, tool_results, session_id: str) -> dict:
-    """Extract structured data from tool results for frontend rendering."""
+def _pick_component(tool_results, channel: str) -> str | None:
+    if channel != "web":
+        return None
+    registry = get_registry()
+    for tr in reversed(tool_results):
+        if not tr.success:
+            continue
+        comp = registry.get_component(tr.tool)
+        if comp:
+            return comp
+    return None
+
+
+def _build_output(text, component, tool_results, session_id: str) -> dict:
     output = {
-        "text": response.text,
-        "component": response.component,
+        "text": text,
+        "component": component,
         "cart_count": database.cart_count(session_id),
         "data": {},
         "products": None,
         "images": None,
     }
-
     for tr in tool_results:
         if not tr.success:
             continue
-
-        if tr.tool in ("search_products", "get_all_products", "get_products_by_category", "get_product_by_id"):
+        if tr.tool in (
+            "search_products",
+            "get_all_products",
+            "get_products_by_category",
+            "get_product_by_id",
+            "get_products_by_ids",
+        ):
             output["products"] = tr.data.get("products", [])
             output["data"] = tr.data
-
         elif tr.tool in ("view_cart", "add_to_cart", "remove_from_cart", "clear_cart"):
             output["data"] = tr.data
-
         elif tr.tool == "get_weather":
             output["data"] = tr.data
-
         elif tr.tool == "perform_virtual_try_on":
             if tr.data.get("image_path"):
                 output["images"] = [tr.data["image_path"]]
             output["data"] = tr.data
-
     return output
 
 
 def _sanitize_text(text: str) -> str:
-    cleaned = text.replace("**", "").replace("__", "").replace("`", "")
+    cleaned = (text or "").replace("**", "").replace("__", "").replace("`", "")
     cleaned = re.sub(r"^\s{0,3}[-*]\s+", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"^\s{0,3}\d+\.\s+", "", cleaned, flags=re.MULTILINE)
     return cleaned.strip()
+
+
+async def _resolve_query_context(user_input: str, history: str) -> tuple[str, bool]:
+    """Use the LLM to turn follow-ups into standalone planner queries."""
+    if not history:
+        return user_input, False
+
+    user = f"Recent conversation:\n{history}\n\nCurrent query: {user_input}"
+    try:
+        resolution = await llm.acall_llm(
+            _QUERY_RESOLUTION_SYSTEM,
+            user,
+            schema=QueryResolution,
+        )
+    except Exception:
+        logger.exception("query context resolver failed")
+        return user_input, False
+
+    rewritten = (resolution.rewritten_query or user_input).strip()
+    return rewritten or user_input, bool(resolution.needs_context or rewritten != user_input)
 
 
 async def run(
@@ -80,14 +127,6 @@ async def run(
     context: str = "",
     user_image_path: str | None = None,
 ) -> dict:
-    """Process user query end-to-end.
-
-    Flow:
-    1. Context enrichment (session memory + chat history)
-    2. Plan (LLM call #1) — decides tools + args OR direct_response
-    3. Execute tools directly (NO LLM)
-    4. Generate response (LLM call #2) — text + UI component
-    """
     if not session_id:
         session_id = str(uuid.uuid4())[:8]
     database.ensure_session(session_id)
@@ -102,46 +141,57 @@ async def run(
                 "session_id": session_id,
             }
 
-        # Phase 1: Context enrichment
+        # Phase 1: Resolve follow-up into a standalone planner query
         session_memory.update_from_message(session_id, user_input)
-        memory_context = session_memory.get_context_string(session_id)
-        full_context = "\n".join(part for part in [context, memory_context] if part)
+        history = session_memory.get_context_string(session_id, limit=6)
+        resolver_llm_calls = 1 if history else 0
+        planner_query, used_history = await _resolve_query_context(user_input, history)
+        planner_context = context
         if user_image_path:
-            full_context = "\n".join(
-                part for part in [full_context, f"User has uploaded a photo: {user_image_path}"] if part
+            planner_context = "\n".join(
+                p for p in [planner_context, f"User uploaded photo: {user_image_path}"] if p
+            )
+        if planner_query != user_input:
+            _log(
+                "query_rewritten",
+                session_id=session_id,
+                original=user_input,
+                rewritten=planner_query,
+                used_history=used_history,
             )
 
-        # Phase 2: Plan (LLM call #1)
-        plan = await run_in_thread(create_plan, user_input, session_id, channel, full_context)
+        # Phase 2: Plan with the standalone query. Raw chat history is not passed here.
+        plan = await create_plan(planner_query, session_id, channel, planner_context)
 
-        # If direct response (greeting/small talk) — 1 LLM call total, done
         if plan.direct_response:
             direct_text = _sanitize_text(plan.direct_response)
             database.save_message(session_id, "user", user_input)
             database.save_message(session_id, "assistant", direct_text)
-            result = {
+            _log(
+                "response",
+                session_id=session_id,
+                text=direct_text[:300],
+                steps=0,
+                llm_calls=1 + resolver_llm_calls,
+            )
+            return {
                 "text": direct_text,
                 "cart_count": database.cart_count(session_id),
                 "session_id": session_id,
             }
-            _log("response", session_id=session_id, text=direct_text[:300],
-                 component=None, steps=0, llm_calls=1)
-            return result
 
         tools_used = [tc.tool for tc in plan.tool_calls]
         _log("plan_created", session_id=session_id, intent=plan.intent, tools=tools_used)
 
-        # Phase 3: Execute tools directly (NO LLM)
+        # Phase 3: Tools
         tool_results = await execute_tools(plan.tool_calls, session_id, user_image_path)
 
-        # Phase 4: Generate response (LLM call #2)
-        response = await run_in_thread(
-            generate_response, user_input, tool_results, full_context, channel,
-        )
+        # Phase 4: Text (LLM #2, native async) — component comes from registry, not an LLM
+        text = await generate_text(user_input, tool_results, channel)
+        component = _pick_component(tool_results, channel)
 
-        # Phase 5: Build output
-        output = _build_output(response, tool_results, session_id)
-        output["text"] = _sanitize_text(output.get("text", ""))
+        # Phase 5: Output
+        output = _build_output(_sanitize_text(text), component, tool_results, session_id)
         output["session_id"] = session_id
 
         database.save_message(session_id, "user", user_input)
@@ -149,8 +199,7 @@ async def run(
             database.save_message(session_id, "assistant", output["text"])
 
         _log("response", session_id=session_id, text=output["text"][:300],
-             component=output.get("component"), tools=tools_used, llm_calls=2)
-
+             component=component, tools=tools_used, llm_calls=2 + resolver_llm_calls)
         return output
 
     except Exception as exc:
@@ -160,6 +209,5 @@ async def run(
 
 
 async def run_text(user_input: str, session_id: str | None = None) -> str:
-    """Convenience: run query and return just text. For Facebook, Instagram, etc."""
     result = await run(user_input, channel="text", session_id=session_id)
     return result.get("text", "Sorry, something went wrong.")

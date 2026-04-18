@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Callable
+
+import config
 
 logger = logging.getLogger(__name__)
 
 _TOOL_METADATA: dict[str, dict[str, Any]] = {
-    "search_products": {"parallel_safe": True, "component": "ProductList"},
-    "get_all_products": {"parallel_safe": True, "component": "RecommendGrid"},
-    "get_product_by_id": {"parallel_safe": True, "component": "ProductList"},
-    "get_products_by_category": {"parallel_safe": True, "component": "ProductList"},
+    "search_products": {"parallel_safe": True, "component": "ProductList", "planner_visible": False},
+    "get_all_products": {"parallel_safe": True, "component": "RecommendGrid", "planner_visible": False},
+    "get_product_by_id": {"parallel_safe": True, "component": "ProductList", "planner_visible": False},
+    "get_products_by_ids": {"parallel_safe": True, "component": "ProductList"},
+    "get_products_by_category": {"parallel_safe": True, "component": "ProductList", "planner_visible": False},
     "view_cart": {"parallel_safe": True, "component": "CartDrawer"},
     "add_to_cart": {"parallel_safe": False, "component": "CartConfirmation", "writes": "cart"},
     "remove_from_cart": {"parallel_safe": False, "component": "CartConfirmation", "writes": "cart"},
@@ -24,9 +28,19 @@ _TOOL_METADATA: dict[str, dict[str, Any]] = {
         "writes": "tryon",
         "depends_on_previous": True,
     },
-    "get_user_history": {"parallel_safe": True, "component": None},
-    "get_user_preferences": {"parallel_safe": True, "component": None},
+    "get_user_history": {"parallel_safe": True, "component": None, "planner_visible": False},
+    "get_user_preferences": {"parallel_safe": True, "component": None, "planner_visible": False},
 }
+
+
+def _load_product_catalog() -> str:
+    path = Path(config.PRODUCTS_MD_PATH)
+    if not path.exists():
+        logger.warning("products.md not found at %s", path)
+        return ""
+    text = path.read_text(encoding="utf-8").strip()
+    logger.info("Loaded product catalog: %d chars", len(text))
+    return text
 
 
 class ToolRegistry:
@@ -34,13 +48,15 @@ class ToolRegistry:
         self._tools: dict[str, Callable] = {}
         self._descriptions: list[dict[str, Any]] = []
         self._metadata: dict[str, dict[str, Any]] = {}
+        self._product_catalog: str = _load_product_catalog()
         self._register_all()
 
     def _register_all(self):
-        from agents.tools import (
+        from tools import (
             search_products,
             get_all_products,
             get_product_by_id,
+            get_products_by_ids,
             get_products_by_category,
             view_cart,
             add_to_cart,
@@ -57,15 +73,15 @@ class ToolRegistry:
             {
                 "name": "search_products",
                 "fn": search_products,
-                "description": "Search products by keyword with optional filters",
+                "description": "Search products by keyword and/or filters. All params optional.",
                 "args": {
-                    "query": "str (required) - search keywords",
+                    "query": "str (optional, default '') - keywords; omit for pure-filter queries like 'under 1000'",
                     "limit": "int (default 8)",
-                    "max_price": "float (optional) - max price filter",
-                    "color": "str (optional) - color filter",
-                    "category": "str (optional) - category filter",
+                    "max_price": "float (optional)",
+                    "color": "str (optional)",
+                    "category": "str (optional)",
                 },
-                "use_when": "User searches for products, mentions product names, colors, prices, categories",
+                "use_when": "Fallback keyword/filter search. Hidden from the planner because products.md is the product index.",
             },
             {
                 "name": "get_all_products",
@@ -79,7 +95,14 @@ class ToolRegistry:
                 "fn": get_product_by_id,
                 "description": "Get a specific product by its ID number",
                 "args": {"product_id": "int (required)"},
-                "use_when": "User asks about a specific product by ID",
+                "use_when": "User asks about one specific product by ID",
+            },
+            {
+                "name": "get_products_by_ids",
+                "fn": get_products_by_ids,
+                "description": "Fetch full DB records for a list of product IDs",
+                "args": {"product_ids": "list[int] (required) - IDs from the Catalog"},
+                "use_when": "Preferred path when the Catalog already gave you the IDs. Bulk-fetch them to show in the UI.",
             },
             {
                 "name": "get_products_by_category",
@@ -91,13 +114,14 @@ class ToolRegistry:
             {
                 "name": "add_to_cart",
                 "fn": add_to_cart,
-                "description": "Add a product to the shopping cart by name",
+                "description": "Add a product to the shopping cart by ID (preferred) or name",
                 "args": {
                     "session_id": "str (auto-injected)",
-                    "product_name": "str (required) - product name to add",
+                    "product_id": "int (preferred) - pick from Catalog",
+                    "product_name": "str (fallback)",
                     "quantity": "int (default 1)",
                 },
-                "use_when": "User says 'add to cart', 'buy this', 'I want this', 'add X'",
+                "use_when": "User says 'add to cart', 'buy this', 'I want this'. Always pass product_id when the Catalog gives it.",
             },
             {
                 "name": "view_cart",
@@ -109,12 +133,13 @@ class ToolRegistry:
             {
                 "name": "remove_from_cart",
                 "fn": remove_from_cart,
-                "description": "Remove a product from cart by name",
+                "description": "Remove a product from cart by ID (preferred) or name",
                 "args": {
                     "session_id": "str (auto-injected)",
-                    "product_name": "str (required)",
+                    "product_id": "int (preferred) - pick from Catalog",
+                    "product_name": "str (fallback)",
                 },
-                "use_when": "User says 'remove from cart', 'take out', 'delete from cart'",
+                "use_when": "User says 'remove from cart', 'take out', 'delete from cart'. Always pass product_id when known.",
             },
             {
                 "name": "clear_cart",
@@ -134,8 +159,11 @@ class ToolRegistry:
                 "name": "check_try_on_eligible",
                 "fn": check_try_on_eligible,
                 "description": "Check if a product can be virtually tried on",
-                "args": {"product_name": "str (required)"},
-                "use_when": "User asks to try on a product or see how it looks",
+                "args": {
+                    "product_id": "int (preferred)",
+                    "product_name": "str (fallback)",
+                },
+                "use_when": "Only when ambiguous. Skip entirely if Catalog category is tshirt/shirt/jeans/kurti — those are always wearable.",
             },
             {
                 "name": "perform_virtual_try_on",
@@ -171,6 +199,7 @@ class ToolRegistry:
                 "component": td.get("component"),
                 "writes": td.get("writes"),
                 "depends_on_previous": bool(td.get("depends_on_previous", False)),
+                "planner_visible": bool(td.get("planner_visible", True)),
             }
             self._descriptions.append(td)
 
@@ -197,10 +226,15 @@ class ToolRegistry:
         component = metadata.get("component")
         return component if isinstance(component, str) else None
 
+    def get_product_catalog_text(self) -> str:
+        return self._product_catalog
+
     def get_planner_prompt_text(self) -> str:
         """Build the text that goes into the planner system prompt."""
         lines = []
         for td in self._descriptions:
+            if not self._metadata.get(td["name"], {}).get("planner_visible", True):
+                continue
             # Show only user-facing args (skip auto-injected ones)
             user_args = {
                 k: v for k, v in td["args"].items()
