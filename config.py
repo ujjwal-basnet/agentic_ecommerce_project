@@ -51,6 +51,12 @@ CAMPAIGN_DIR = os.getenv("CAMPAIGN_DIR", "data/campaigns")
 # Set this to your Render (or production) HTTPS URL.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 
+# Supabase Storage — for persisting product images, uploads, try-on results, campaigns.
+# SUPABASE_URL: your project URL e.g. https://xyzxyz.supabase.co
+# SUPABASE_SERVICE_KEY: service_role key (Settings → API → service_role secret)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
 # Nano Banana / Gemini image generation.
 NANO_BANANA_MODEL = os.getenv("NANO_BANANA_MODEL", GEMINI_IMAGE_MODEL)
 

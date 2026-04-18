@@ -45,6 +45,15 @@ def _get_client() -> genai.Client:
 def _load_image(path: str | None) -> Image.Image | None:
     if not path:
         return None
+    if path.startswith("http://") or path.startswith("https://"):
+        import requests
+        try:
+            r = requests.get(path, timeout=15)
+            r.raise_for_status()
+            return Image.open(io.BytesIO(r.content))
+        except Exception as e:
+            log.warning("campaign_visual: could not download %s: %s", path, e)
+            return None
     p = Path(path)
     if not p.exists():
         log.warning("campaign_visual: image not found at %s", p)
@@ -103,13 +112,19 @@ def generate_campaign_image(
         contents=contents,
     )
 
-    out_path = CAMPAIGN_DIR / f"campaign_{uuid.uuid4().hex[:10]}.png"
+    import storage as _storage
+    fname = f"campaign_{uuid.uuid4().hex[:10]}.png"
 
     for cand in response.candidates or []:
         parts = getattr(cand.content, "parts", []) or []
         for part in parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
+                url = _storage.upload("campaign-images", fname, inline.data)
+                if url:
+                    log.info("campaign_visual: uploaded to %s", url)
+                    return url
+                out_path = CAMPAIGN_DIR / fname
                 out_path.write_bytes(inline.data)
                 log.info("campaign_visual: wrote %s", out_path)
                 return str(out_path)

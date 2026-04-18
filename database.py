@@ -773,6 +773,11 @@ def get_wishlist(sid: str) -> list[dict]:
 # ── Try-on image helpers ────────────────────────────────────────────────────
 
 def save_user_image(file_bytes: bytes, session_id: str, ext: str = ".jpg") -> str:
+    import storage
+    ct = "image/jpeg" if ext.lower() in (".jpg", ".jpeg") else "image/png"
+    url = storage.upload("user-uploads", f"{session_id}{ext}", file_bytes, content_type=ct)
+    if url:
+        return url
     out = Path(config.USER_UPLOADS_DIR) / f"{session_id}{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(file_bytes)
@@ -780,8 +785,14 @@ def save_user_image(file_bytes: bytes, session_id: str, ext: str = ".jpg") -> st
 
 
 def save_product_image(file_bytes: bytes, product_name: str, ext: str = ".jpg") -> str:
+    import storage
     safe_name = product_name.lower().replace(" ", "_").replace("/", "_")
-    out = Path(config.PRODUCT_IMAGES_DIR) / f"{safe_name}{ext}"
+    fname = f"{safe_name}{ext}"
+    ct = "image/jpeg" if ext.lower() in (".jpg", ".jpeg") else "image/png"
+    url = storage.upload("product-images", fname, file_bytes, content_type=ct)
+    if url:
+        return url
+    out = Path(config.PRODUCT_IMAGES_DIR) / fname
     counter = 1
     while out.exists():
         out = Path(config.PRODUCT_IMAGES_DIR) / f"{safe_name}_{counter}{ext}"

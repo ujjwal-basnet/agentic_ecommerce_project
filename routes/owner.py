@@ -214,7 +214,10 @@ async def campaign_visual_generate(
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
 
     product_image_path = product.get("image_path") or ""
-    if not product_image_path or not Path(product_image_path).exists():
+    if not product_image_path or (
+        not product_image_path.startswith("http")
+        and not Path(product_image_path).exists()
+    ):
         raise HTTPException(status_code=400, detail=f"Product {product_id} has no usable image")
 
     model_image_path: str | None = None
@@ -250,12 +253,10 @@ async def campaign_visual_generate(
         _log.exception("campaign_visual_generate failed")
         return {"success": False, "error": str(e)}
 
+    if out_path.startswith("http://") or out_path.startswith("https://"):
+        return {"success": True, "image_path": out_path, "image_url": out_path}
     rel = Path(out_path).name
-    return {
-        "success": True,
-        "image_path": out_path,
-        "image_url": f"/data/campaigns/{rel}",
-    }
+    return {"success": True, "image_path": out_path, "image_url": f"/data/campaigns/{rel}"}
 
 
 @router.post("/campaign/launch", response_model=LaunchCampaignResponse)
@@ -268,17 +269,19 @@ async def campaign_launch(
     from routes.facebook import post_photo_to_page
     from routes.instagram import publish_photo_to_instagram
 
-    p = Path(image_path)
-    if not p.exists():
-        raise HTTPException(status_code=400, detail=f"image_path not found: {image_path}")
-
-    base = config.PUBLIC_BASE_URL
-    if not base:
-        raise HTTPException(
-            status_code=400,
-            detail="PUBLIC_BASE_URL not configured. Set it to your Render (or production) HTTPS URL so Facebook/Instagram can fetch the image.",
-        )
-    image_url = f"{base}/data/campaigns/{p.name}"
+    if image_path.startswith("http://") or image_path.startswith("https://"):
+        image_url = image_path
+    else:
+        p = Path(image_path)
+        if not p.exists():
+            raise HTTPException(status_code=400, detail=f"image_path not found: {image_path}")
+        base = config.PUBLIC_BASE_URL
+        if not base:
+            raise HTTPException(
+                status_code=400,
+                detail="PUBLIC_BASE_URL not configured. Set it to your Render (or production) HTTPS URL so Facebook/Instagram can fetch the image.",
+            )
+        image_url = f"{base}/data/campaigns/{p.name}"
 
     wanted = [c.strip().lower() for c in channels.split(",") if c.strip()]
     deployed: list[str] = []

@@ -504,19 +504,26 @@ def perform_virtual_try_on(product_id: int, user_image_path: str) -> str:
             contents=[prompt, user_img, product_img],
         )
 
+        import storage as _storage
         output_dir = Path(config.TRYON_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
-        out_path = output_dir / f"tryon_{uuid.uuid4().hex[:8]}.png"
+        fname = f"tryon_{uuid.uuid4().hex[:8]}.png"
 
         for cand in response.candidates or []:
             parts = getattr(cand.content, "parts", []) or []
             for part in parts:
                 inline = getattr(part, "inline_data", None)
                 if inline and getattr(inline, "data", None):
-                    out_path.write_bytes(inline.data)
+                    url = _storage.upload("tryon-results", fname, inline.data)
+                    if url:
+                        img_result = url
+                    else:
+                        out_path = output_dir / fname
+                        out_path.write_bytes(inline.data)
+                        img_result = str(out_path)
                     return json.dumps({
                         "success": True,
-                        "image_path": str(out_path),
+                        "image_path": img_result,
                         "message": f"Try-on generated for {name}",
                         "model": config.NANO_BANANA_MODEL,
                     })

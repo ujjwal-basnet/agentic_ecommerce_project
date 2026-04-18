@@ -32,6 +32,14 @@ services:
       - key: PUBLIC_BASE_URL
         sync: false
 
+      # ── Supabase Storage ──────────────────────────────────────────────────
+      # SUPABASE_URL: https://<project-id>.supabase.co
+      # SUPABASE_SERVICE_KEY: Settings → API → service_role secret
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+
       # ── MCP server ────────────────────────────────────────────────────────
       - key: MCP_BEARER_TOKEN
         sync: false
