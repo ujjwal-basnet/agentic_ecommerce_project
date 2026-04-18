@@ -127,3 +127,41 @@ export function imageUrl(path: string) {
   if (path.startsWith("http")) return path;
   return `${API}/${path.replace(/^\//, "")}`;
 }
+
+// ─── Auth + behavior tracking ─────────────────────────────────────────
+
+export interface MeUser {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export async function login(sessionId: string, name: string, email: string): Promise<{ ok: boolean; user: MeUser }> {
+  const body = new FormData();
+  body.append("session_id", sessionId);
+  body.append("name", name);
+  body.append("email", email);
+  const res = await fetch(`${API}/api/auth/login`, { method: "POST", body });
+  if (!res.ok) throw new Error((await res.text()) || "login failed");
+  return res.json();
+}
+
+export async function fetchMe(sessionId: string): Promise<{ user: MeUser | null }> {
+  const res = await fetch(`${API}/api/auth/me?session_id=${sessionId}`);
+  return res.json();
+}
+
+export async function logout(sessionId: string) {
+  const body = new FormData();
+  body.append("session_id", sessionId);
+  await fetch(`${API}/api/auth/logout`, { method: "POST", body });
+}
+
+export function trackView(sessionId: string, productId: number, searchQuery?: string) {
+  const body = new FormData();
+  body.append("session_id", sessionId);
+  body.append("product_id", String(productId));
+  if (searchQuery) body.append("search_query", searchQuery);
+  // Fire-and-forget; never block product rendering on tracking.
+  fetch(`${API}/api/track/view`, { method: "POST", body, keepalive: true }).catch(() => {});
+}

@@ -1,8 +1,8 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { addToCartDirect, imageUrl } from "@/lib/api";
-import { useState } from "react";
+import { addToCartDirect, imageUrl, trackView } from "@/lib/api";
+import { useEffect, useState } from "react";
 import TryOnModal from "./TryOnModal";
 
 interface Product {
@@ -33,6 +33,17 @@ export default function RecommendGrid({
   const products = Array.isArray(data) ? data : [];
   const [adding, setAdding] = useState<number | null>(null);
   const [tryOnProduct, setTryOnProduct] = useState<Product | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const seen = new Set<number>();
+    for (const p of products) {
+      if (p?.id && !seen.has(p.id)) {
+        seen.add(p.id);
+        trackView(sessionId, p.id);
+      }
+    }
+  }, [products, sessionId]);
 
   async function handleAdd(p: Product) {
     setAdding(p.id);
