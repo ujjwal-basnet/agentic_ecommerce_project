@@ -1,12 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
-  Package, BarChart3, Settings, Plus, Trash2, RefreshCw,
-  TrendingUp, ChevronLeft, ChevronRight, Search, Filter,
-  DollarSign, Users, AlertTriangle, Pencil, X,
+  Package, BarChart3, Settings, Sparkles, Plus, Minus, Trash2, RefreshCw,
+  TrendingUp, ChevronLeft, ChevronRight, Search, Filter, X,
 } from "lucide-react";
-import { fetchAnalytics, fetchProducts, addProduct, deleteProduct, postToFacebook, imageUrl } from "@/lib/api";
+import { fetchProducts, addProduct, deleteProduct, updateProduct, postToFacebook, imageUrl } from "@/lib/api";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -22,49 +22,7 @@ interface Product {
   is_wearable: number;
 }
 
-interface Stats {
-  total_products: number;
-  total_orders: number;
-  total_revenue: number;
-  total_customers: number;
-}
-
-interface RevenueDay {
-  date: string;
-  revenue: number;
-  orders: number;
-}
-
-interface TopProduct {
-  product_name: string;
-  total_sold: number;
-  revenue: number;
-}
-
-interface CategoryRevenue {
-  category: string;
-  revenue: number;
-}
-
-interface StockItem {
-  id: number;
-  name: string;
-  category: string;
-  quantity: number;
-  price: number;
-}
-
-interface Order {
-  id: number;
-  product_name: string;
-  category: string;
-  price: number;
-  quantity: number;
-  status: string;
-  created_at: string;
-}
-
-type NavTab = "catalog" | "analytics" | "settings";
+type NavTab = "catalog" | "settings";
 
 /* ─── Stock Chip ─────────────────────────────────────────────────────── */
 
@@ -81,12 +39,6 @@ function StockChip({ qty }: { qty: number }) {
 export default function OwnerDashboard() {
   const [nav, setNav] = useState<NavTab>("catalog");
   const [products, setProducts] = useState<Product[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [revenue, setRevenue] = useState<RevenueDay[]>([]);
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
-  const [byCategory, setByCategory] = useState<CategoryRevenue[]>([]);
-  const [stock, setStock] = useState<StockItem[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -99,13 +51,7 @@ export default function OwnerDashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [analytics, prods] = await Promise.all([fetchAnalytics(30), fetchProducts()]);
-      setStats(analytics.stats);
-      setRevenue(analytics.revenue || []);
-      setTopProducts(analytics.top || []);
-      setByCategory(analytics.by_cat || []);
-      setStock(analytics.stock || []);
-      setOrders(analytics.orders || []);
+      const prods = await fetchProducts();
       setProducts(prods || []);
     } catch (e) {
       console.error("Failed to load data", e);
@@ -119,6 +65,20 @@ export default function OwnerDashboard() {
     if (!confirm("Delete this product?")) return;
     await deleteProduct(pid);
     loadAll();
+  }
+
+  async function handleQtyChange(pid: number, nextQty: number) {
+    if (nextQty < 0) return;
+    setProducts((prev) => prev.map((p) => (p.id === pid ? { ...p, quantity: nextQty } : p)));
+    const form = new FormData();
+    form.append("product_id", String(pid));
+    form.append("quantity", String(nextQty));
+    try {
+      await updateProduct(form);
+    } catch (e) {
+      console.error("quantity update failed", e);
+      loadAll();
+    }
   }
 
   async function handleAddProduct(e: React.FormEvent<HTMLFormElement>) {
@@ -176,9 +136,8 @@ export default function OwnerDashboard() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const lowStock = stock.filter((s) => s.quantity < 5 && s.quantity > 0);
-  const outOfStock = stock.filter((s) => s.quantity <= 0);
-  const maxRevenue = Math.max(...revenue.map((r) => r.revenue || 0), 1);
+  const lowStock = products.filter((p) => p.quantity < 5 && p.quantity > 0);
+  const outOfStock = products.filter((p) => p.quantity <= 0);
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fa]">
@@ -190,7 +149,20 @@ export default function OwnerDashboard() {
         </div>
         <nav className="flex-1 px-3 space-y-1">
           <SidebarItem icon={<Package size={16} />} label="Inventory" active={nav === "catalog"} onClick={() => setNav("catalog")} />
-          <SidebarItem icon={<BarChart3 size={16} />} label="Analytics" active={nav === "analytics"} onClick={() => setNav("analytics")} />
+          <Link
+            href="/analytics"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-muted hover:bg-soft transition-colors"
+          >
+            <BarChart3 size={16} />
+            Analytics
+          </Link>
+          <Link
+            href="/workflow"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-muted hover:bg-soft transition-colors"
+          >
+            <Sparkles size={16} />
+            Workflow
+          </Link>
           <SidebarItem icon={<Settings size={16} />} label="Settings" active={nav === "settings"} onClick={() => setNav("settings")} />
         </nav>
         <div className="px-3 pb-6">
@@ -210,7 +182,7 @@ export default function OwnerDashboard() {
           <div className="flex items-center gap-6">
             <span className="text-sm text-muted-2 font-medium">Dashboard</span>
             <span className={`text-sm font-semibold cursor-pointer pb-0.5 ${nav === "catalog" ? "text-[#2b3437] border-b-2 border-[#2b3437]" : "text-muted-2 hover:text-[#2b3437]"}`} onClick={() => setNav("catalog")}>Catalog</span>
-            <span className={`text-sm font-semibold cursor-pointer pb-0.5 ${nav === "analytics" ? "text-[#2b3437] border-b-2 border-[#2b3437]" : "text-muted-2 hover:text-[#2b3437]"}`} onClick={() => setNav("analytics")}>Analytics</span>
+            <Link href="/analytics" className="text-sm font-semibold text-muted-2 hover:text-[#2b3437] pb-0.5">Analytics</Link>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -255,10 +227,11 @@ export default function OwnerDashboard() {
               </div>
 
               {/* Table header (desktop) */}
-              <div className="hidden md:grid grid-cols-[3fr_1.4fr_1.4fr_1fr_0.6fr] gap-4 px-2 mb-3 text-muted-2 text-[11px] uppercase tracking-[0.22em] font-bold">
+              <div className="hidden md:grid grid-cols-[2.6fr_1.1fr_1.2fr_1.4fr_1fr_0.6fr] gap-4 px-2 mb-3 text-muted-2 text-[11px] uppercase tracking-[0.22em] font-bold">
                 <div>Product Identity</div>
                 <div>Category</div>
                 <div>Stock Status</div>
+                <div>Quantity</div>
                 <div>Price</div>
                 <div className="text-right">Action</div>
               </div>
@@ -266,7 +239,7 @@ export default function OwnerDashboard() {
               {/* Product rows */}
               <div className="space-y-3">
                 {paginated.map((p) => (
-                  <article key={p.id} className="bg-white rounded-[22px] p-4 shadow-[0_1px_1px_rgba(43,52,55,0.02)] grid grid-cols-1 md:grid-cols-[3fr_1.4fr_1.4fr_1fr_0.6fr] gap-4 items-center">
+                  <article key={p.id} className="bg-white rounded-[22px] p-4 shadow-[0_1px_1px_rgba(43,52,55,0.02)] grid grid-cols-1 md:grid-cols-[2.6fr_1.1fr_1.2fr_1.4fr_1fr_0.6fr] gap-4 items-center">
                     {/* Product identity */}
                     <div className="flex gap-4 items-center min-w-0">
                       <div className="w-16 h-20 flex-shrink-0 rounded-xl bg-[#eceeef] overflow-hidden">
@@ -292,6 +265,31 @@ export default function OwnerDashboard() {
                     <div>
                       <div className="md:hidden text-[10px] uppercase tracking-[0.18em] text-muted-2 font-bold mb-1">Stock</div>
                       <StockChip qty={p.quantity} />
+                    </div>
+
+                    {/* Quantity editor */}
+                    <div>
+                      <div className="md:hidden text-[10px] uppercase tracking-[0.18em] text-muted-2 font-bold mb-1">Quantity</div>
+                      <div className="inline-flex items-center gap-1 bg-soft rounded-full border border-line px-1 py-1">
+                        <button
+                          onClick={() => handleQtyChange(p.id, p.quantity - 1)}
+                          disabled={p.quantity <= 0}
+                          className="w-7 h-7 flex items-center justify-center rounded-full text-muted hover:bg-white hover:text-[#2b3437] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Decrease"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="min-w-[2rem] text-center font-headline font-bold text-sm text-[#2b3437] tabular-nums">
+                          {p.quantity}
+                        </span>
+                        <button
+                          onClick={() => handleQtyChange(p.id, p.quantity + 1)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full text-muted hover:bg-white hover:text-[#2b3437] transition-colors"
+                          title="Increase"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Price */}
@@ -384,141 +382,6 @@ export default function OwnerDashboard() {
                 </div>
               </section>
             </>
-          ) : nav === "analytics" ? (
-            /* ─── ANALYTICS VIEW ─────────────────────────────────── */
-            <div className="space-y-8">
-              <div>
-                <h1 className="font-headline font-extrabold text-[clamp(2rem,4vw,3.5rem)] leading-[0.95] tracking-[-0.03em]">Analytics</h1>
-                <p className="text-muted mt-2">Revenue, orders, and performance insights</p>
-              </div>
-
-              {/* Stat cards */}
-              {stats && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatCard icon={<DollarSign size={20} />} label="Revenue" value={`Rs. ${stats.total_revenue.toLocaleString()}`} />
-                  <StatCard icon={<BarChart3 size={20} />} label="Orders" value={String(stats.total_orders)} />
-                  <StatCard icon={<Package size={20} />} label="Products" value={String(stats.total_products)} />
-                  <StatCard icon={<Users size={20} />} label="Customers" value={String(stats.total_customers)} />
-                </div>
-              )}
-
-              {/* Low stock alert */}
-              {lowStock.length > 0 && (
-                <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-2xl p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle size={16} className="text-orange-500" />
-                    <span className="font-headline font-bold text-sm text-orange-800">Low Stock Alert</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {lowStock.map((s) => (
-                      <span key={s.id} className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full font-medium">{s.name}: {s.quantity} left</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Revenue chart */}
-              <div className="bg-white rounded-2xl border border-line p-6">
-                <h3 className="font-headline font-bold text-sm mb-5 flex items-center gap-2">
-                  <TrendingUp size={16} className="text-[#5b6478]" /> Revenue (Last 30 Days)
-                </h3>
-                {revenue.length === 0 ? (
-                  <p className="text-muted-2 text-sm text-center py-12">No revenue data yet</p>
-                ) : (
-                  <div className="flex items-end gap-1 h-44">
-                    {revenue.map((r, i) => (
-                      <div key={i} className="flex-1 flex flex-col items-center group relative">
-                        <div
-                          className="w-full bg-[#5b6478] rounded-t-sm hover:bg-primary-dim transition-colors min-h-[2px]"
-                          style={{ height: `${Math.max((r.revenue / maxRevenue) * 100, 2)}%` }}
-                          title={`${r.date}: Rs. ${r.revenue?.toFixed(0)}`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Top products */}
-                <div className="bg-white rounded-2xl border border-line p-6">
-                  <h3 className="font-headline font-bold text-sm mb-4">Top Products</h3>
-                  <div className="space-y-3">
-                    {topProducts.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-muted-2 w-5 font-bold">#{i + 1}</span>
-                          <span className="font-medium truncate max-w-[200px]">{p.product_name}</span>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-muted">
-                          <span>{p.total_sold} sold</span>
-                          <span className="text-[#5b6478] font-bold">Rs. {p.revenue.toFixed(0)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Revenue by category */}
-                <div className="bg-white rounded-2xl border border-line p-6">
-                  <h3 className="font-headline font-bold text-sm mb-4">Revenue by Category</h3>
-                  <div className="space-y-3">
-                    {byCategory.map((c, i) => {
-                      const totalCatRev = byCategory.reduce((s, x) => s + (x.revenue || 0), 0) || 1;
-                      const pct = ((c.revenue || 0) / totalCatRev) * 100;
-                      return (
-                        <div key={i}>
-                          <div className="flex justify-between text-sm mb-1.5">
-                            <span className="capitalize font-medium">{c.category}</span>
-                            <span className="text-muted text-xs">Rs. {c.revenue?.toFixed(0)} ({pct.toFixed(0)}%)</span>
-                          </div>
-                          <div className="w-full bg-soft rounded-full h-2">
-                            <div className="bg-[#5b6478] h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent orders */}
-              <div className="bg-white rounded-2xl border border-line p-6">
-                <h3 className="font-headline font-bold text-sm mb-4">Recent Orders</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-muted-2 text-[10px] uppercase tracking-[0.18em] font-bold border-b border-line">
-                        <th className="pb-3">ID</th>
-                        <th className="pb-3">Product</th>
-                        <th className="pb-3">Qty</th>
-                        <th className="pb-3">Price</th>
-                        <th className="pb-3">Status</th>
-                        <th className="pb-3">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orders.map((o) => (
-                        <tr key={o.id} className="border-b border-line/50">
-                          <td className="py-3 text-muted-2 font-headline font-semibold">#{o.id}</td>
-                          <td className="py-3 font-medium">{o.product_name}</td>
-                          <td className="py-3">{o.quantity}</td>
-                          <td className="py-3 font-headline font-bold">Rs. {o.price}</td>
-                          <td className="py-3">
-                            <span className={`text-[10px] uppercase tracking-wider font-bold px-3 py-1 rounded-full ${
-                              o.status === "delivered" ? "bg-[#5b6478] text-white" : "bg-soft-2 text-muted"
-                            }`}>
-                              {o.status}
-                            </span>
-                          </td>
-                          <td className="py-3 text-muted-2 text-xs">{o.created_at?.split(" ")[0]}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
           ) : (
             /* ─── SETTINGS VIEW ──────────────────────────────────── */
             <div>
@@ -595,18 +458,6 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode; 
       {icon}
       {label}
     </button>
-  );
-}
-
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="bg-white rounded-2xl border border-line p-5">
-      <div className="w-10 h-10 rounded-xl bg-soft-2 flex items-center justify-center mb-4 text-[#5b6478]">
-        {icon}
-      </div>
-      <p className="font-headline font-extrabold text-2xl tracking-tight">{value}</p>
-      <p className="text-xs text-muted-2 mt-1 uppercase tracking-[0.15em] font-bold">{label}</p>
-    </div>
   );
 }
 
