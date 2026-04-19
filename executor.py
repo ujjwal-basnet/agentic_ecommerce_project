@@ -1,131 +1,121 @@
-"""Executor — runs each plan step through the MCP registry."""
+"""Executor — calls tools directly as Python functions. No LLM involved."""
 
-import copy
-import time
-from typing import Any
+from __future__ import annotations
 
-from channels.capabilities import (
-    ChannelCapabilities,
-    WEB_APP,
-    should_send_component,
-)
-from custom_mcp import create_mcp_message, resolve_dependencies, get_registry
-from log import log_agent_call, log_agent_result, log_error
-import database
+import asyncio
+import inspect
+import json
+import logging
+
+from registry import get_registry
+from schemas import ToolCall, ToolResult
+from thread_pool import run_in_thread
+
+logger = logging.getLogger(__name__)
+
+# Fields the executor auto-injects into tool args
+_AUTO_INJECT = {"session_id", "user_image_path"}
+_SIGNATURE_CACHE: dict[str, inspect.Signature] = {}
 
 
-def execute_plan(
-    plan: list[dict[str, Any]],
+def _signature_for(tool_name: str, tool_fn) -> inspect.Signature:
+    cached = _SIGNATURE_CACHE.get(tool_name)
+    if cached is not None:
+        return cached
+    # LangChain StructuredTool: sync tools use .func, async tools use .coroutine
+    underlying = (
+        getattr(tool_fn, "coroutine", None)
+        or getattr(tool_fn, "func", None)
+        or tool_fn
+    )
+    signature = inspect.signature(underlying)
+    _SIGNATURE_CACHE[tool_name] = signature
+    return signature
+
+
+def _decode_tool_output(raw) -> dict:
+    if isinstance(raw, str):
+        return json.loads(raw)
+    if isinstance(raw, dict):
+        return raw
+    return {"result": str(raw)}
+
+
+async def _execute_one_tool(registry, tc: ToolCall, session_id: str, user_image_path: str | None) -> ToolResult:
+    tool_name = tc.tool
+    args = dict(tc.args)
+
+    try:
+        tool_fn = registry.get_tool(tool_name)
+        sig = _signature_for(tool_name, tool_fn)
+
+        if "session_id" in sig.parameters and "session_id" not in args:
+            args["session_id"] = session_id
+        if "user_image_path" in sig.parameters and "user_image_path" not in args:
+            if user_image_path:
+                args["user_image_path"] = user_image_path
+
+        logger.info("execute tool=%s args=%s", tool_name, args)
+        is_async = getattr(tool_fn, "coroutine", None) is not None
+        if is_async:
+            raw = await tool_fn.ainvoke(args)
+        else:
+            raw = await run_in_thread(tool_fn.invoke, args)
+        data = _decode_tool_output(raw)
+
+        logger.info("execute done tool=%s success=True keys=%s", tool_name, sorted(data.keys()))
+        return ToolResult(tool=tool_name, success=True, data=data)
+
+    except Exception as e:
+        logger.exception("execute failed tool=%s", tool_name)
+        return ToolResult(tool=tool_name, success=False, data={}, error=str(e))
+
+
+async def _execute_parallel_batch(
+    registry,
+    batch: list[ToolCall],
     session_id: str,
-    user_input: str = "",
+    user_image_path: str | None,
+) -> list[ToolResult]:
+    if not batch:
+        return []
+    if len(batch) == 1:
+        return [await _execute_one_tool(registry, batch[0], session_id, user_image_path)]
+
+    logger.info("execute parallel batch tools=%s", [tc.tool for tc in batch])
+    results = await asyncio.gather(
+        *(_execute_one_tool(registry, tc, session_id, user_image_path) for tc in batch)
+    )
+    return list(results)
+
+
+async def execute_tools(
+    tool_calls: list[ToolCall],
+    session_id: str,
     user_image_path: str | None = None,
-    trace_id: str | None = None,
-    channel_caps: ChannelCapabilities | None = None,
-) -> dict[str, Any]:
-    """Run each step, return consolidated result for the renderer.
+) -> list[ToolResult]:
+    """Execute tool calls directly. No LLM calls — pure function dispatch.
 
     Args:
-        plan: Execution plan from orchestrator
-        session_id: User session identifier
-        user_input: Original user message
-        user_image_path: Optional path to uploaded image
-        trace_id: Optional trace identifier for logging
-        channel_caps: Channel capabilities (defaults to WEB_APP if not provided)
+        tool_calls: List of ToolCall from the planner.
+        session_id: Current session ID (auto-injected into tools that need it).
+        user_image_path: Path to uploaded user image (for try-on).
 
     Returns:
-        Dict with text, data, component (if supported), cart count, etc.
+        List of ToolResult with structured data from each tool.
     """
-    if channel_caps is None:
-        channel_caps = WEB_APP
-
     registry = get_registry()
-    state: dict[str, Any] = {}
-    total_elapsed = 0.0
+    results: list[ToolResult] = []
+    parallel_batch: list[ToolCall] = []
 
-    if plan:
-        plan = copy.deepcopy(plan)
-        plan[0]["input"].setdefault("session_id", session_id)
-        plan[0]["input"].setdefault("user_image_path", user_image_path)
-        plan[0]["input"].setdefault("channel_caps", channel_caps)
+    for tc in tool_calls:
+        if registry.is_parallel_safe(tc.tool):
+            parallel_batch.append(tc)
+            continue
 
-    for step in plan:
-        step_num = step.get("step", 0)
-        agent_name = step.get("agent", "")
-        raw_input = step.get("input", {})
+        results.extend(await _execute_parallel_batch(registry, parallel_batch, session_id, user_image_path))
+        parallel_batch = []
+        results.append(await _execute_one_tool(registry, tc, session_id, user_image_path))
 
-        try:
-            resolved = resolve_dependencies(raw_input, state)
-        except Exception as exc:
-            log_error(session_id, agent_name, str(exc), attempt=0)
-            return _err(str(exc), step_num)
-
-        mcp_in = create_mcp_message("executor", resolved)
-        log_agent_call(session_id, agent_name, resolved.get("action", ""),
-                       list(resolved.keys()))
-
-        try:
-            handler = registry.get_handler(agent_name, session_id=session_id)
-        except ValueError as exc:
-            log_error(session_id, agent_name, str(exc), attempt=0)
-            return _err(str(exc), step_num)
-
-        t0 = time.time()
-        try:
-            mcp_out = handler(mcp_in, channel_caps=channel_caps)
-        except Exception as exc:
-            log_error(session_id, agent_name, str(exc), attempt=1)
-            mcp_out = create_mcp_message(agent_name, {
-                "status": "error", "error": str(exc),
-                "text": "An error occurred.", "component": None,
-            })
-
-        elapsed = time.time() - t0
-        total_elapsed += elapsed
-        content = mcp_out.get("content", {})
-        log_agent_result(session_id, agent_name, content.get("tool", ""),
-                         content.get("status", "ok"), int(elapsed * 1000))
-
-        state[f"STEP_{step_num}_OUTPUT"] = content
-
-    last = state.get(f"STEP_{len(plan)}_OUTPUT", {}) if plan else {}
-    tool = last.get("tool", "")
-    # Use 'is not None' checks so empty lists [] are preserved (not skipped as falsy)
-    data = last.get("data") if last.get("data") is not None else (
-        last.get("products") if last.get("products") is not None else (
-            last.get("items") if last.get("items") is not None else last
-        )
-    )
-
-    # Filter component based on channel capabilities
-    component = last.get("component")
-    if component and not should_send_component(channel_caps):
-        component = None
-
-    # Collect inline images (e.g. try-on output)
-    images = None
-    if last.get("image_path"):
-        images = [last["image_path"]]
-
-    result = {
-        "text": last.get("text", "Here you go!"),
-        "component": component,
-        "tool": tool,
-        "data": data,
-        "images": images,
-        "cart_count": database.cart_count(session_id),
-        "steps": len(plan),
-        "elapsed": round(total_elapsed, 3),
-        "channel": channel_caps.name,
-    }
-
-    database.save_message(session_id, "user", user_input)
-    database.save_message(session_id, "assistant", result["text"])
-    return result
-
-
-def _err(error: str, step: int) -> dict[str, Any]:
-    return {
-        "text": f"Something went wrong at step {step}: {error}",
-        "component": None, "data": None, "tool": None,
-        "images": None, "cart_count": 0, "steps": step - 1, "elapsed": 0.0,
-    }
+    results.extend(await _execute_parallel_batch(registry, parallel_batch, session_id, user_image_path))
+    return results

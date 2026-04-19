@@ -1,0 +1,17 @@
+# SmartShop Product Catalog
+
+Use the `id` to call `get_products_by_ids([...])`. All prices in Rs.
+{% if wearable_ids %}
+Clothing / wearable product IDs: {{ wearable_ids | join(", ") }}.
+For "wear", "wearable", "clothes", or "outfit" requests, only use those IDs
+unless the user asks for a specific accessory such as sunglasses.
+{% endif %}
+
+## Products
+{% for p in products %}
+- id={{ p.id }}
+  name: {{ p.name }}
+  price: Rs. {{ p.price | int }}
+  color: {{ p.color or "—" }}
+  tags: {{ p.tag_list | join(", ") if p.tag_list else "—" }}
+{% endfor %}

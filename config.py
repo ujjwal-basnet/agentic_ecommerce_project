@@ -6,49 +6,74 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# ── LLM / Google Gemini on Vertex AI ────────────────────────────────────────
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+_VERTEX_ENV = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
+GOOGLE_GENAI_USE_VERTEXAI = (
+    _VERTEX_ENV.lower() in {"1", "true", "yes", "on"}
+    if _VERTEX_ENV is not None
+    else True
+)
+
+# Kept only as a fallback for Gemini Developer API code paths elsewhere.
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 
-DB_PATH = os.getenv("DB_PATH", "database/smartshop.db")
-DB_IMAGES_DIR = os.getenv("DB_IMAGES_DIR", "database/images")
-USER_IMAGES_DIR = os.getenv("USER_IMAGES_DIR", "uploads/user_images")
-TRYON_DIR = os.getenv("TRYON_DIR", "uploads/tryon_outputs")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+DB_SSLMODE = os.getenv("DB_SSLMODE", "require")
+PRODUCTS_MD_PATH = os.getenv("PRODUCTS_MD_PATH", "products.md")
+PRODUCT_IMAGES_DIR = os.getenv("PRODUCT_IMAGES_DIR", "data/products")
+USER_UPLOADS_DIR = os.getenv("USER_UPLOADS_DIR", "data/uploads")
+TRYON_DIR = os.getenv("TRYON_DIR", "data/tryon")
+CAMPAIGN_DIR = os.getenv("CAMPAIGN_DIR", "data/campaigns")
 
+# Public base URL — used by Facebook/Instagram Graph API (which fetch images by URL).
+# Set this to your Render (or production) HTTPS URL.
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+# Supabase Storage — for persisting product images, uploads, try-on results, campaigns.
+# SUPABASE_URL: your project URL e.g. https://xyzxyz.supabase.co
+# SUPABASE_SERVICE_KEY: service_role key (Settings → API → service_role secret)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
+# ── Meta/Facebook/Instagram Unified Config ───────────────────────────────────
+# App credentials (shared across Facebook, Instagram, WhatsApp)
+META_APP_ID = os.getenv("META_APP_ID", "")
+META_APP_SECRET = os.getenv("META_APP_SECRET", "")
+META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "smartshop-webhook")
+META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
+
+# Facebook Page
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
-FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "")
+FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN") or META_ACCESS_TOKEN
 FB_GRAPH_VERSION = os.getenv("FB_GRAPH_VERSION", "v24.0")
-FB_VERIFY_TOKEN = os.getenv("FB_VERIFY_TOKEN", "smartshop-webhook")
+GRAPH_API_BASE = f"https://graph.facebook.com/{FB_GRAPH_VERSION}"
 
-# WhatsApp Business API
-WHATSAPP_API_TOKEN = os.getenv("WHATSAPP_API_TOKEN", "")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
-WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "smartshop-webhook")
+# Instagram Business account
+IG_USER_ID = os.getenv("IG_USER_ID", "")
 
-# Channel feature flags
-ENABLE_FB_MESSENGER = os.getenv("ENABLE_FB_MESSENGER", "false").lower() == "true"
-ENABLE_WHATSAPP = os.getenv("ENABLE_WHATSAPP", "false").lower() == "true"
-ENABLE_VOICE = os.getenv("ENABLE_VOICE", "true").lower() == "true"
+PROTOCOL_LOG_PATH = os.getenv("PROTOCOL_LOG_PATH", "logs/protocol_log.jsonl")
 
-MCP_LOG_PATH = os.getenv("MCP_LOG_PATH", "logs/mcp_log.jsonl")
-
-CUSTOMER_API_URL = os.getenv("CUSTOMER_API_URL", "http://localhost:8000")
-OWNER_API_URL = os.getenv("OWNER_API_URL", "http://localhost:8000")
+# Remote MCP access for Claude/Cursor/etc. Set this on Render and keep it secret.
+MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
 
-def openai_enabled() -> bool:
-    return bool(OPENAI_API_KEY and OPENAI_API_KEY.strip())
+def gemini_enabled() -> bool:
+    if GOOGLE_GENAI_USE_VERTEXAI:
+        return bool(GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS)
+    return bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
 
 
-def facebook_enabled() -> bool:
-    return bool(FB_PAGE_ID and FB_PAGE_ID.strip() and FB_PAGE_ACCESS_TOKEN and FB_PAGE_ACCESS_TOKEN.strip())
-
-
-def whatsapp_enabled() -> bool:
-    return bool(WHATSAPP_API_TOKEN and WHATSAPP_API_TOKEN.strip() and WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_PHONE_NUMBER_ID.strip())
 
 
 # Ensure directories exist
-for d in [Path(DB_PATH).parent, Path(DB_IMAGES_DIR),
-          Path(USER_IMAGES_DIR), Path(TRYON_DIR), Path(MCP_LOG_PATH).parent]:
+for d in [Path(PRODUCT_IMAGES_DIR), Path(USER_UPLOADS_DIR),
+          Path(TRYON_DIR), Path(CAMPAIGN_DIR),
+          Path(PROTOCOL_LOG_PATH).parent]:
     d.mkdir(parents=True, exist_ok=True)

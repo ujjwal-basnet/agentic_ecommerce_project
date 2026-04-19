@@ -1,42 +1,390 @@
-"""Owner dashboard API routes — analytics, products CRUD, facebook."""
+"""Owner dashboard API routes — analytics, products CRUD, facebook, campaign workflow."""
 
 from __future__ import annotations
 import json
+import logging
 import os
-from fastapi import APIRouter, UploadFile, File, Form
-import database
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+
+import analytics_ml
 import catalog_generator
+import config
+import database
+import llm
+from registry import get_registry
+from schemas import (
+    CaptionRestyleResponse,
+    LaunchCampaignResponse,
+    LogisticsResponse,
+    OwnerAnalyticsResponse,
+    OverviewResponse,
+    ProductCreateResponse,
+    ProductDeleteResponse,
+    ProductSchema,
+    ProductUpdateResponse,
+    SocialPostResponse,
+    StatusUpdateResponse,
+    ForecastResponse,
+    TrendingResponse,
+    VisualGenerateResponse,
+)
+
+_log = logging.getLogger("smartshop.owner")
 
 router = APIRouter(prefix="/owner")
 
 
-@router.get("/analytics")
-async def get_analytics(days: int = 30):
+# ── Analytics (Lumière Noir dashboard) ─────────────────────────────────────
+
+_FORECAST_RANGES = {"7d", "30d", "ytd"}
+
+
+def _overview_stats() -> dict:
     stats = database.get_summary_stats()
-    revenue = database.get_revenue_by_day(days)
-    top = database.get_top_products(5)
-    by_cat = database.get_revenue_by_category()
-    stock = database.get_stock_levels()
-    orders = database.get_recent_orders(10)
+    day = analytics_ml.sales_day_delta()
     return {
-        "stats": stats, "revenue": revenue, "top": top,
-        "by_cat": by_cat, "stock": stock, "orders": orders,
+        "total_revenue": stats["total_revenue"],
+        "total_orders": stats["total_orders"],
+        "total_customers": database.get_customer_count(),
+        "total_products": stats["total_products"],
+        "today_revenue": day["today_revenue"],
+        "yesterday_revenue": day["yesterday_revenue"],
+        "day_delta_pct": day["day_delta_pct"],
     }
 
 
-@router.get("/products")
+def _valid_range(range_: str) -> str:
+    if range_ not in _FORECAST_RANGES:
+        raise HTTPException(status_code=400, detail="range must be 7d, 30d, or ytd")
+    return range_
+
+
+def _initials(name: str) -> str:
+    parts = [p for p in (name or "").split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _logistics_rows(limit: int) -> list[dict]:
+    return [
+        {**row, "user_initials": _initials(row.get("user_name", ""))}
+        for row in database.get_logistics_rows(limit)
+    ]
+
+
+@router.get("/analytics", response_model=OwnerAnalyticsResponse)
+async def analytics_dashboard(
+    range: str = "7d",
+    trend_limit: int = 3,
+    logistics_limit: int = 20,
+):
+    range_ = _valid_range(range)
+    return {
+        "stats": _overview_stats(),
+        "forecast": analytics_ml.forecast_revenue(range_),
+        "products": analytics_ml.trending_products(limit=trend_limit),
+        "rows": _logistics_rows(logistics_limit),
+    }
+
+
+@router.get("/analytics/overview", response_model=OverviewResponse)
+async def analytics_overview():
+    return {"stats": _overview_stats()}
+
+
+@router.get("/analytics/forecast", response_model=ForecastResponse)
+async def analytics_forecast(range: str = "7d"):
+    return analytics_ml.forecast_revenue(_valid_range(range))
+
+
+@router.get("/analytics/trending", response_model=TrendingResponse)
+async def analytics_trending(limit: int = 3):
+    return {"products": analytics_ml.trending_products(limit=limit)}
+
+
+@router.get("/analytics/logistics", response_model=LogisticsResponse)
+async def analytics_logistics(limit: int = 20):
+    return {"rows": _logistics_rows(limit)}
+
+
+@router.post("/orders/status", response_model=StatusUpdateResponse)
+async def update_order_status(
+    order_id: int = Form(...),
+    status: str = Form(...),
+):
+    try:
+        ok = database.update_order_status(order_id, status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="order not found")
+    analytics_ml.invalidate_cache()
+    return {"ok": True, "order_id": order_id, "status": status}
+
+
+# ── Campaign workflow (Curator AI) ─────────────────────────────────────────
+
+_TONE_DIRECTIVES = {
+    "punchy": "Short, urgent, high-energy. One or two sentences. 1-3 emojis. Drive click-through.",
+    "editorial": "Elevated, magazine-style voice. Confident and concise. No emojis. 2-3 sentences.",
+    "technical": "Feature-first. Lead with the spec or material benefit. Minimal hype.",
+}
+
+
+_LANGUAGE_DIRECTIVES = {
+    "en": "Write the caption in natural English.",
+    "ne": (
+        "Write the caption in natural Nepali using Devanagari script (नेपाली). "
+        "Keep product name, price numerals, and hashtags as-is in English. "
+        "The body text must be Nepali, not romanized."
+    ),
+}
+
+
+@router.post("/campaign/caption/restyle", response_model=CaptionRestyleResponse)
+async def campaign_caption_restyle(
+    product_id: int = Form(...),
+    tone: str = Form("editorial"),
+    language: str = Form("en"),
+):
+    """Ask the LLM to rewrite a social caption for the given product in the chosen tone + language."""
+    tone_key = (tone or "editorial").lower().strip()
+    lang_key = (language or "en").lower().strip()
+    directive = _TONE_DIRECTIVES.get(tone_key, _TONE_DIRECTIVES["editorial"])
+    lang_directive = _LANGUAGE_DIRECTIVES.get(lang_key, _LANGUAGE_DIRECTIVES["en"])
+
+    product = database.get_product_by_id(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    system = (
+        "You are a social-media copywriter for a high-end e-commerce brand. "
+        "Produce only the caption text — no preamble, no quotes, no explanations."
+    )
+    user = (
+        f"Tone: {tone_key}. Style: {directive}\n"
+        f"Language: {lang_directive}\n\n"
+        f"Product: {product.get('name', '')}\n"
+        f"Category: {product.get('category', '')}\n"
+        f"Color: {product.get('color', '')}\n"
+        f"Price: Rs. {product.get('price', 0)}\n"
+        f"Description: {product.get('description', '') or 'n/a'}\n\n"
+        "Write a ready-to-post Instagram / Facebook caption. Include 2-4 relevant hashtags "
+        "at the end. Do not exceed 280 characters."
+    )
+    try:
+        caption = (await llm.acall_llm(system, user)).strip()
+    except Exception:
+        _log.exception("campaign_caption_restyle failed")
+        raise HTTPException(status_code=502, detail="LLM call failed")
+
+    return {"caption": caption, "tone": tone_key, "language": lang_key}
+
+
+_BACKGROUND_PRESETS = {
+    "studio_white": "Clean seamless white studio cyclorama background with soft diffused lighting, minimal shadow underneath the subject.",
+    "studio_noir": "Deep matte charcoal studio background with dramatic single-source side lighting and rich shadow detail.",
+    "soft_peach": "Warm peach-to-blush gradient studio backdrop with gentle golden-hour lighting and subtle film grain.",
+    "concrete": "Minimalist brutalist polished concrete wall backdrop, cool daylight, hard editorial shadows.",
+    "coastal_blue": "Soft misty coastal blue gradient backdrop with diffused overcast light, calm atmosphere.",
+    "warm_taupe": "Neutral taupe seamless backdrop with warm tungsten key light and a soft rim light.",
+}
+
+
+@router.post("/campaign/visual/generate", response_model=VisualGenerateResponse)
+async def campaign_visual_generate(
+    product_id: int = Form(...),
+    prompt: str = Form(""),
+    background_preset: str = Form(""),
+    model_photo: UploadFile | None = File(None),
+    background_photo: UploadFile | None = File(None),
+):
+    """Generate a campaign image from product + optional model + optional background + prompt.
+
+    Background can come from an uploaded photo OR a named preset. Uploaded photo wins
+    if both are supplied.
+    """
+    from campaign_visual import generate_campaign_image
+
+    product = database.get_product_by_id(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    product_image_path = product.get("image_path") or ""
+    if not product_image_path or (
+        not product_image_path.startswith("http")
+        and not Path(product_image_path).exists()
+    ):
+        raise HTTPException(status_code=400, detail=f"Product {product_id} has no usable image")
+
+    model_image_path: str | None = None
+    if model_photo is not None and model_photo.filename:
+        contents = await model_photo.read()
+        ext = Path(model_photo.filename).suffix or ".jpg"
+        model_image_path = database.save_user_image(
+            contents, f"campaign_model_{product_id}_{uuid.uuid4().hex[:8]}", ext
+        )
+
+    background_image_path: str | None = None
+    if background_photo is not None and background_photo.filename:
+        contents = await background_photo.read()
+        ext = Path(background_photo.filename).suffix or ".jpg"
+        background_image_path = database.save_user_image(
+            contents, f"campaign_bg_{product_id}_{uuid.uuid4().hex[:8]}", ext
+        )
+
+    effective_prompt = prompt or ""
+    preset_key = (background_preset or "").strip().lower()
+    if preset_key and preset_key in _BACKGROUND_PRESETS and background_image_path is None:
+        snippet = _BACKGROUND_PRESETS[preset_key]
+        effective_prompt = f"{effective_prompt} Background: {snippet}".strip()
+
+    try:
+        out_path = generate_campaign_image(
+            product_image_path,
+            model_image_path,
+            effective_prompt,
+            background_image_path=background_image_path,
+        )
+    except Exception as e:
+        _log.exception("campaign_visual_generate failed")
+        return {"success": False, "error": str(e)}
+
+    if out_path.startswith("http://") or out_path.startswith("https://"):
+        return {"success": True, "image_path": out_path, "image_url": out_path}
+    rel = Path(out_path).name
+    return {"success": True, "image_path": out_path, "image_url": f"/data/campaigns/{rel}"}
+
+
+@router.post("/campaign/launch", response_model=LaunchCampaignResponse)
+async def campaign_launch(
+    image_path: str = Form(...),
+    caption: str = Form(""),
+    channels: str = Form("facebook"),  # comma-separated: "facebook,instagram"
+):
+    """Deploy the visual + caption to selected channels via Graph API.
+
+    Facebook accepts binary uploads, so we read the bytes once and post directly
+    (no public URL required). Instagram's Graph API only accepts a hosted
+    image_url, so we fall back to: (1) the original URL if it's already remote,
+    (2) a Supabase upload, (3) PUBLIC_BASE_URL + local serve path.
+    """
+    import storage
+    from routes.facebook import post_photo_to_page
+    from routes.instagram import publish_photo_to_instagram
+
+    wanted = [c.strip().lower() for c in channels.split(",") if c.strip()]
+
+    is_remote = image_path.startswith("http://") or image_path.startswith("https://")
+    image_bytes: bytes | None = None
+    image_url: str | None = image_path if is_remote else None
+    filename = Path(image_path).name or "campaign.png"
+    content_type = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+
+    if not is_remote:
+        p = Path(image_path)
+        if not p.exists():
+            raise HTTPException(status_code=400, detail=f"image_path not found: {image_path}")
+        image_bytes = p.read_bytes()
+
+    # Instagram requires a public URL; resolve one lazily if IG is selected.
+    if "instagram" in wanted and not image_url:
+        # IG Graph API /media only accepts JPEG. Convert in-memory if we have PNG bytes.
+        ig_bytes, ig_filename, ig_ct = image_bytes, filename, content_type
+        if ig_bytes is not None and content_type != "image/jpeg":
+            import io
+            from PIL import Image
+            try:
+                img = Image.open(io.BytesIO(ig_bytes))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                ig_bytes = buf.getvalue()
+                ig_filename = Path(filename).stem + ".jpg"
+                ig_ct = "image/jpeg"
+            except Exception:
+                _log.exception("PNG→JPEG conversion for Instagram failed")
+
+        if ig_bytes is not None:
+            try:
+                image_url = storage.upload("campaign-images", ig_filename, ig_bytes, content_type=ig_ct)
+            except Exception:
+                _log.exception("Supabase upload for Instagram failed")
+                image_url = None
+        if not image_url and config.PUBLIC_BASE_URL:
+            image_url = f"{config.PUBLIC_BASE_URL.rstrip('/')}/data/campaigns/{ig_filename}"
+
+    deployed: list[str] = []
+    failed: list[dict] = []
+
+    if "facebook" in wanted:
+        try:
+            if image_bytes is not None:
+                await post_photo_to_page(
+                    caption=caption,
+                    image_bytes=image_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+            else:
+                await post_photo_to_page(image_url=image_url, caption=caption)
+            deployed.append("facebook")
+        except Exception as e:
+            _log.exception("facebook launch failed")
+            failed.append({"channel": "facebook", "error": str(e)})
+
+    if "instagram" in wanted:
+        try:
+            if not image_url:
+                raise RuntimeError(
+                    "Instagram requires a public image URL. Configure SUPABASE_URL/"
+                    "SUPABASE_SERVICE_KEY or PUBLIC_BASE_URL so the image is reachable."
+                )
+            await publish_photo_to_instagram(image_url, caption)
+            deployed.append("instagram")
+        except Exception as e:
+            _log.exception("instagram launch failed")
+            failed.append({"channel": "instagram", "error": str(e)})
+
+    return {"ok": len(deployed) > 0 and not failed, "deployed": deployed, "failed": failed}
+
+
+# ── Products CRUD ──────────────────────────────────────────────────────────
+
+@router.get("/products", response_model=list[ProductSchema])
 async def list_products():
     return database.get_all_products()
 
 
-@router.post("/products/new")
+def _tags_to_json(raw: str) -> str:
+    items = [t.strip() for t in (raw or "").split(",") if t.strip()]
+    return json.dumps(items)
+
+
+def _refresh_catalog() -> None:
+    try:
+        catalog_generator.regenerate_products_md()
+        get_registry().reload_product_catalog()
+    except Exception:
+        _log.exception("products.md regeneration failed")
+
+
+@router.post("/products/new", response_model=ProductCreateResponse)
 async def new_product(
     name: str = Form(),
-    category: str = Form(),
     price: float = Form(),
     quantity: int = Form(),
+    category: str = Form(""),
     color: str = Form(""),
     description: str = Form(""),
+    tags: str = Form(""),
     image: UploadFile | None = File(None),
     is_wearable: bool = Form(False),
 ):
@@ -49,28 +397,23 @@ async def new_product(
     pid = database.insert_product(
         name=name, category=category, color=color, price=price,
         description=description, quantity=quantity,
-        image_path=image_path, tags="[]", is_wearable=int(is_wearable),
+        image_path=image_path, tags=_tags_to_json(tags),
+        is_wearable=int(is_wearable),
     )
-    # Enrich description via LLM and regenerate catalog
-    try:
-        catalog_generator.enrich_and_regenerate(pid)
-    except Exception as e:
-        print(f"[owner] Catalog enrichment failed: {e}")
+    analytics_ml.invalidate_cache()
+    _refresh_catalog()
     return {"success": True, "product_id": pid}
 
 
-@router.post("/products/delete")
+@router.post("/products/delete", response_model=ProductDeleteResponse)
 async def delete_product(product_id: int = Form(...)):
     ok = database.delete_product_row(product_id)
-    # Regenerate catalog after deletion
-    try:
-        catalog_generator.regenerate_catalog()
-    except Exception as e:
-        print(f"[owner] Catalog regeneration failed: {e}")
+    analytics_ml.invalidate_cache()
+    _refresh_catalog()
     return {"ok": ok}
 
 
-@router.post("/products/update")
+@router.post("/products/update", response_model=ProductUpdateResponse)
 async def update_product(
     product_id: int = Form(...),
     name: str = Form(None),
@@ -79,6 +422,7 @@ async def update_product(
     quantity: int = Form(None),
     color: str = Form(None),
     description: str = Form(None),
+    tags: str = Form(None),
 ):
     kwargs = {}
     if name is not None: kwargs["name"] = name
@@ -87,22 +431,18 @@ async def update_product(
     if quantity is not None: kwargs["quantity"] = quantity
     if color is not None: kwargs["color"] = color
     if description is not None: kwargs["description"] = description
+    if tags is not None: kwargs["tags"] = _tags_to_json(tags)
     if kwargs:
         database.update_product(product_id, **kwargs)
+        analytics_ml.invalidate_cache()
+        _refresh_catalog()
     return {"success": True}
 
 
-@router.post("/facebook/post")
+@router.post("/facebook/post", response_model=SocialPostResponse)
 async def post_to_facebook(
     image: UploadFile = File(...),
     caption: str = Form(""),
 ):
     """Post a product image + caption — delegates to specialist agent."""
-    from specialist_agents.facebook import post_to_page
-
-    contents = await image.read()
-    return post_to_page(
-        image_bytes=contents,
-        caption=caption,
-        filename=image.filename or "post.jpg",
-    )
+    raise RuntimeError("Facebook image upload posting is not wired. Use /api/facebook/post with image_url.")
