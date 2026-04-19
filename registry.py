@@ -21,20 +21,26 @@ _TOOL_METADATA: dict[str, dict[str, Any]] = {
     "remove_from_cart": {"parallel_safe": False, "component": "CartConfirmation", "writes": "cart"},
     "clear_cart": {"parallel_safe": False, "component": "CartConfirmation", "writes": "cart"},
     "get_weather": {"parallel_safe": True, "component": "WeatherCard"},
-    "check_try_on_eligible": {"parallel_safe": True, "component": None},
     "perform_virtual_try_on": {
         "parallel_safe": False,
         "component": None,
         "writes": "tryon",
         "depends_on_previous": True,
     },
-    "get_user_history": {"parallel_safe": True, "component": None, "planner_visible": False},
-    "get_user_preferences": {"parallel_safe": True, "component": None, "planner_visible": False},
+    "get_user_history": {"parallel_safe": True, "component": None, "planner_visible": True},
 }
 
 
 def _load_product_catalog() -> str:
     path = Path(config.PRODUCTS_MD_PATH)
+    if not path.exists():
+        try:
+            from catalog_generator import regenerate_products_md
+
+            regenerate_products_md(path)
+        except Exception:
+            logger.exception("Failed to regenerate products.md on first load")
+            return ""
     if not path.exists():
         logger.warning("products.md not found at %s", path)
         return ""
@@ -51,6 +57,9 @@ class ToolRegistry:
         self._product_catalog: str = _load_product_catalog()
         self._register_all()
 
+    def reload_product_catalog(self) -> None:
+        self._product_catalog = _load_product_catalog()
+
     def _register_all(self):
         from tools import (
             search_products,
@@ -63,10 +72,8 @@ class ToolRegistry:
             remove_from_cart,
             clear_cart,
             get_weather,
-            check_try_on_eligible,
             perform_virtual_try_on,
             get_user_history,
-            get_user_preferences,
         )
 
         tool_defs = [
@@ -156,16 +163,6 @@ class ToolRegistry:
                 "use_when": "User asks about weather, temperature, or climate",
             },
             {
-                "name": "check_try_on_eligible",
-                "fn": check_try_on_eligible,
-                "description": "Check if a product can be virtually tried on",
-                "args": {
-                    "product_id": "int (preferred)",
-                    "product_name": "str (fallback)",
-                },
-                "use_when": "Only when ambiguous. Skip entirely if Catalog category is tshirt/shirt/jeans/kurti — those are always wearable.",
-            },
-            {
                 "name": "perform_virtual_try_on",
                 "fn": perform_virtual_try_on,
                 "description": "Perform virtual try-on (requires user photo uploaded first)",
@@ -173,21 +170,14 @@ class ToolRegistry:
                     "product_id": "int (required)",
                     "user_image_path": "str (auto-injected from upload)",
                 },
-                "use_when": "After check_try_on_eligible confirms eligibility and user photo is available",
+                "use_when": "When user photo is available and product_id is a wearable (see Catalog's wearable IDs). The tool also rejects non-wearables server-side.",
             },
             {
                 "name": "get_user_history",
                 "fn": get_user_history,
                 "description": "Get recent conversation history for personalization",
                 "args": {"session_id": "str (auto-injected)"},
-                "use_when": "Needed for personalized recommendations alongside get_all_products",
-            },
-            {
-                "name": "get_user_preferences",
-                "fn": get_user_preferences,
-                "description": "Get user preferences from order/cart history",
-                "args": {"session_id": "str (auto-injected)"},
-                "use_when": "Needed for personalized recommendations",
+                "use_when": "Optional: call before get_products_by_ids when prior chats would sharpen the recommendation",
             },
         ]
 

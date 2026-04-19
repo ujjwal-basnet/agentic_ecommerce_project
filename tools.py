@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
+from pathlib import Path
 
 from langchain_core.tools import tool
 
@@ -12,7 +14,6 @@ import database
 import config
 
 logger = logging.getLogger(__name__)
-
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Product / Search Tools
@@ -117,24 +118,21 @@ def get_products_by_ids(product_ids: list[int]) -> str:
     """Fetch full DB records for a list of product IDs. Use this when the planner
     already picked specific products from the catalog. Returns {products: [...]}."""
     try:
-        products = []
-        missing = []
-        for pid in product_ids:
-            p = database.get_product_by_id(int(pid))
-            if not p:
-                missing.append(int(pid))
-                continue
-            products.append({
-                "id": p.get("id"),
-                "name": p.get("name"),
-                "category": p.get("category"),
-                "color": p.get("color"),
-                "price": float(p.get("price", 0)),
-                "quantity": int(p.get("quantity", 0)),
-                "description": p.get("description", ""),
-                "image_path": p.get("image_path", ""),
-                "is_wearable": bool(p.get("is_wearable", 0)),
-            })
+        ids = [int(pid) for pid in product_ids]
+        rows = database.get_products_by_ids(ids)
+        found_ids = {p["id"] for p in rows}
+        missing = [i for i in ids if i not in found_ids]
+        products = [{
+            "id": p.get("id"),
+            "name": p.get("name"),
+            "category": p.get("category"),
+            "color": p.get("color"),
+            "price": float(p.get("price", 0)),
+            "quantity": int(p.get("quantity", 0)),
+            "description": p.get("description", ""),
+            "image_path": p.get("image_path", ""),
+            "is_wearable": bool(p.get("is_wearable", 0)),
+        } for p in rows]
         return json.dumps({"products": products, "count": len(products), "missing": missing})
     except Exception:
         logger.exception("get_products_by_ids failed")
@@ -309,7 +307,7 @@ def clear_cart(session_id: str) -> str:
 # ───────────────────────────────────────────────────────────────────────────────
 
 @tool
-def get_user_history(session_id: str, limit: int = 5) -> str:
+def get_user_history(session_id: str, limit: int = 6) -> str:
     """Get recent conversation history for a user session."""
     try:
         history = database.load_history(session_id, limit=limit)
@@ -324,26 +322,6 @@ def get_user_history(session_id: str, limit: int = 5) -> str:
         return json.dumps({"history": simplified, "session_id": session_id})
     except Exception:
         logger.exception("get_user_history failed")
-        raise
-
-
-@tool
-def get_user_preferences(session_id: str) -> str:
-    """Get user preferences based on order/cart history."""
-    try:
-        orders = database.get_orders_by_session(session_id, limit=10)
-        cart = database.db_get_cart(session_id)
-        # Derive preferences from what user has bought/carted
-        categories = [o.get("category", "") for o in orders if o.get("category")]
-        return json.dumps({
-            "preferences": {
-                "recent_categories": list(set(categories))[:5],
-                "order_count": len(orders),
-                "has_cart_items": len(cart) > 0,
-            }
-        })
-    except Exception:
-        logger.exception("get_user_preferences failed")
         raise
 
 
@@ -396,45 +374,20 @@ def get_weather(location: str = "Kathmandu") -> str:
 # Try-On Tools
 # ───────────────────────────────────────────────────────────────────────────────
 
-@tool
-def check_try_on_eligible(
-    product_id: int | None = None,
-    product_name: str | None = None,
-) -> str:
-    """Check if a product is eligible for virtual try-on. Prefer product_id."""
-    try:
-        prod = None
-        if product_id is not None:
-            prod = database.get_product_by_id(int(product_id))
-        if prod is None and product_name:
-            prod = database.get_product_by_name(product_name)
-            if prod is None:
-                products = database.search_products(product_name, limit=5)
-                prod = next((p for p in products if p.get("is_wearable")), None) or (products[0] if products else None)
-
-        if not prod:
-            ref = f"id={product_id}" if product_id is not None else f"'{product_name}'"
-            return json.dumps({"eligible": False, "error": f"Product {ref} not found"})
-
-        is_wearable = bool(prod.get("is_wearable", 0))
-        return json.dumps({
-            "eligible": is_wearable,
-            "product_id": prod.get("id"),
-            "product_name": prod.get("name"),
-            "reason": "Wearable item" if is_wearable else "Not a wearable item",
-        })
-    except Exception:
-        logger.exception("check_try_on_eligible failed")
-        raise
+_TRYON_PROMPT = (
+    "Compose a single photorealistic image of the person in the USER reference "
+    "actually wearing or using the ITEM shown in the product reference. "
+    "Place the item on the correct body region; match scale, perspective, drape, "
+    "and fabric physics; match the scene's lighting, shadows, and skin tone. "
+    "Keep the person's face, body proportions, and background unchanged. "
+    "No text overlays, no watermarks, no extra items. Output one image only."
+)
 
 
 @tool
 def perform_virtual_try_on(product_id: int, user_image_path: str) -> str:
-    """Perform virtual try-on — composes the user's photo with the product via Gemini image model."""
+    """Virtual try-on via Gemini image model. Only runs for products the owner flagged as wearable."""
     try:
-        from pathlib import Path
-        import uuid
-
         if not user_image_path or not Path(user_image_path).exists():
             return json.dumps({
                 "success": False,
@@ -445,70 +398,39 @@ def perform_virtual_try_on(product_id: int, user_image_path: str) -> str:
         if not product:
             return json.dumps({"success": False, "error": f"Product #{product_id} not found"})
 
+        if not product.get("is_wearable"):
+            return json.dumps({
+                "success": False,
+                "error": f"'{product['name']}' is not marked as wearable. Only owner-flagged wearables can be tried on.",
+            })
+
         product_image_path = product.get("image_path", "")
         if not product_image_path or not Path(product_image_path).exists():
             return json.dumps({"success": False, "error": f"No image for '{product['name']}'"})
 
-        from google import genai
-        from google.oauth2 import service_account
         from PIL import Image
+        from google_client import get_genai_client
+        import storage as _storage
 
-        if config.GOOGLE_GENAI_USE_VERTEXAI:
-            creds = service_account.Credentials.from_service_account_file(
-                str(Path(config.GOOGLE_APPLICATION_CREDENTIALS).expanduser()),
-                scopes=["https://www.googleapis.com/auth/cloud-platform"],
-            )
-            client = genai.Client(
-                vertexai=True,
-                project=config.GOOGLE_CLOUD_PROJECT,
-                location=config.GOOGLE_CLOUD_LOCATION,
-                credentials=creds,
-            )
-        else:
-            client = genai.Client(api_key=config.GOOGLE_API_KEY)
+        try:
+            client = get_genai_client()
+        except Exception as e:
+            logger.exception("Try-on: Google credentials failed")
+            return json.dumps({"success": False, "error": f"Credentials failed: {e}"})
 
         user_img = Image.open(user_image_path)
         product_img = Image.open(product_image_path)
 
-        category = (product.get("category") or "").lower()
-        name = product.get("name") or "product"
-        color = product.get("color") or ""
-        if any(k in category for k in ("shirt", "tshirt", "t-shirt", "top", "jacket", "hoodie", "sweater", "dress")):
-            action = "wearing the garment on their torso"
-        elif any(k in category for k in ("pant", "trouser", "jean", "short", "skirt")):
-            action = "wearing the garment on their lower body"
-        elif any(k in category for k in ("shoe", "sneaker", "boot", "sandal")):
-            action = "wearing the footwear"
-        elif any(k in category for k in ("watch", "bracelet", "ring", "necklace", "jewel")):
-            action = "wearing the accessory"
-        elif any(k in category for k in ("hat", "cap", "beanie")):
-            action = "wearing the headwear"
-        elif any(k in category for k in ("bag", "purse", "backpack")):
-            action = "holding or wearing the bag"
-        elif any(k in category for k in ("glass", "sunglass", "eyewear")):
-            action = "wearing the eyewear"
-        else:
-            action = "using or wearing the product naturally"
-
-        prompt = (
-            f"Compose a photorealistic virtual try-on image. Show the exact same person from the USER reference "
-            f"{action} — specifically the {color + ' ' if color else ''}{name} from the PRODUCT reference. "
-            "Preserve the person's face, skin tone, hair, body proportions, pose, and background as closely as "
-            "possible. Replace or overlay only the relevant clothing/item area with the product, matching "
-            "realistic fabric drape, lighting, and shadows. Output a single clean photograph, no text, no "
-            "watermarks, no collage."
-        )
-
         response = client.models.generate_content(
-            model=config.NANO_BANANA_MODEL,
-            contents=[prompt, user_img, product_img],
+            model=config.GEMINI_IMAGE_MODEL,
+            contents=[_TRYON_PROMPT, product_img, user_img],
         )
 
-        import storage as _storage
         output_dir = Path(config.TRYON_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         fname = f"tryon_{uuid.uuid4().hex[:8]}.png"
 
+        text_parts: list[str] = []
         for cand in response.candidates or []:
             parts = getattr(cand.content, "parts", []) or []
             for part in parts:
@@ -524,10 +446,16 @@ def perform_virtual_try_on(product_id: int, user_image_path: str) -> str:
                     return json.dumps({
                         "success": True,
                         "image_path": img_result,
-                        "message": f"Try-on generated for {name}",
-                        "model": config.NANO_BANANA_MODEL,
+                        "message": f"Try-on generated for {product['name']}",
+                        "model": config.GEMINI_IMAGE_MODEL,
                     })
+                text = getattr(part, "text", None)
+                if text:
+                    text_parts.append(text)
 
+        # Model returned only text — log it so we know what went wrong.
+        if text_parts:
+            logger.warning("Try-on returned text only (no image): %s", " | ".join(text_parts)[:500])
         return json.dumps({
             "success": False,
             "error": "Image model returned no image data. Try a different photo.",
@@ -558,7 +486,6 @@ CART_TOOLS = [
 
 CONTEXT_TOOLS = [
     get_user_history,
-    get_user_preferences,
 ]
 
 WEATHER_TOOLS = [
@@ -566,7 +493,6 @@ WEATHER_TOOLS = [
 ]
 
 TRY_ON_TOOLS = [
-    check_try_on_eligible,
     perform_virtual_try_on,
 ]
 

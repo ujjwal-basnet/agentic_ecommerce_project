@@ -29,8 +29,7 @@ async def verify_webhook(
     hub_challenge: str = Query("", alias="hub.challenge"),
 ):
     """Verify webhook with Facebook."""
-    expected = getattr(config, 'FB_VERIFY_TOKEN', 'smartshop-webhook')
-    if hub_mode == "subscribe" and hub_verify_token == expected:
+    if hub_mode == "subscribe" and hub_verify_token == config.META_VERIFY_TOKEN:
         return Response(content=hub_challenge, media_type="text/plain")
     return Response(content="Verification failed", status_code=403)
 
@@ -79,11 +78,11 @@ async def _handle_message(sender_id: str, message: dict):
 
 
 async def _send_text(sender_id: str, text: str):
-    """Send plain text message to Facebook."""
+    """Send plain text message to Facebook Messenger (uses Page Access Token)."""
     import aiohttp
 
-    token = getattr(config, 'META_ACCESS_TOKEN', None)
-    page_id = getattr(config, 'FB_PAGE_ID', None)
+    token = _page_token()
+    page_id = getattr(config, "FB_PAGE_ID", None)
 
     if not token or not page_id:
         raise RuntimeError("Facebook not configured")
@@ -97,50 +96,77 @@ async def _send_text(sender_id: str, text: str):
                 raise RuntimeError(f"Facebook API error: {await resp.text()}")
 
 
-async def post_photo_to_page(image_url: str, caption: str) -> bool:
-    """Post a photo to the Facebook Page feed."""
+def _page_token() -> str | None:
+    """Prefer an explicit Page Access Token; fall back to META_ACCESS_TOKEN.
+    Posting to /{page_id}/photos and /{page_id}/feed requires a Page token,
+    not a User token. Get one via /{page_id}?fields=access_token."""
+    return getattr(config, "FB_PAGE_ACCESS_TOKEN", None) or getattr(config, "META_ACCESS_TOKEN", None)
+
+
+async def post_photo_to_page(
+    image_url: str | None = None,
+    caption: str = "",
+    image_bytes: bytes | None = None,
+    filename: str = "photo.png",
+    content_type: str = "image/png",
+) -> bool:
+    """Post a photo to the Facebook Page feed.
+
+    Rule: access_token → params (URL), everything else → json body.
+    - image_url path: POST json={"url": ..., "message": ...}, params={access_token}.
+    - image_bytes path: binary requires multipart, so we fall back to form-data
+      (source + message in body), access_token still in params.
+    """
     import aiohttp
 
-    token = getattr(config, 'META_ACCESS_TOKEN', None)
-    page_id = getattr(config, 'FB_PAGE_ID', None)
-
+    token = _page_token()
+    page_id = getattr(config, "FB_PAGE_ID", None)
     if not token or not page_id:
         raise RuntimeError("Facebook credentials not configured for posting")
+    if not image_url and not image_bytes:
+        raise RuntimeError("post_photo_to_page requires image_url or image_bytes")
 
     url = f"{GRAPH_API_BASE}/{page_id}/photos"
-    params = {
-        "url": image_url,
-        "message": caption,
-        "access_token": token,
-    }
+    query = {"access_token": token}
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, params=params, timeout=30) as resp:
-            data = await resp.json()
-            if "id" in data:
-                _log.info("Facebook photo posted: %s", data["id"])
-                return True
-            raise RuntimeError(f"Facebook photo post failed: {data}")
+        if image_bytes is not None:
+            form = aiohttp.FormData()
+            form.add_field("source", image_bytes, filename=filename, content_type=content_type)
+            if caption:
+                form.add_field("message", caption)
+            async with session.post(url, data=form, params=query, timeout=60) as resp:
+                data = await resp.json()
+        else:
+            body = {"url": image_url}
+            if caption:
+                body["message"] = caption
+            async with session.post(url, json=body, params=query, timeout=30) as resp:
+                data = await resp.json()
+
+        if "id" in data:
+            _log.info("Facebook photo posted: %s", data["id"])
+            return True
+        raise RuntimeError(f"Facebook photo post failed: {data}")
 
 
 async def post_feed_message(message: str) -> bool:
-    """Post a text message to the Facebook Page feed."""
+    """Post a text message to the Facebook Page feed.
+    Rule: access_token → params, message → json body."""
     import aiohttp
 
-    token = getattr(config, 'META_ACCESS_TOKEN', None)
-    page_id = getattr(config, 'FB_PAGE_ID', None)
+    token = _page_token()
+    page_id = getattr(config, "FB_PAGE_ID", None)
 
     if not token or not page_id:
         raise RuntimeError("Facebook credentials not configured for posting")
 
     url = f"{GRAPH_API_BASE}/{page_id}/feed"
-    params = {
-        "message": message,
-        "access_token": token,
-    }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, params=params, timeout=10) as resp:
+        async with session.post(
+            url, json={"message": message}, params={"access_token": token}, timeout=10
+        ) as resp:
             data = await resp.json()
             if "id" in data:
                 _log.info("Facebook feed post created: %s", data["id"])

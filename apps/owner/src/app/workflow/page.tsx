@@ -175,12 +175,12 @@ export default function WorkflowPage() {
   }
 
   async function handleLaunch() {
-    const active = variations[activeVariant];
-    if (!active) {
+    const imagePath = variations[activeVariant]?.image_path ?? selected?.image_path ?? null;
+    if (!imagePath) {
       setLaunchResult({
         ok: false,
         deployed: [],
-        failed: [{ channel: "preflight", error: "Generate at least one visual first." }],
+        failed: [{ channel: "preflight", error: "Pick a product or generate a visual first." }],
       });
       return;
     }
@@ -196,8 +196,12 @@ export default function WorkflowPage() {
     setLaunching(true);
     setLaunchResult(null);
     try {
-      const res = await launchCampaign(active.image_path, caption, picked);
-      setLaunchResult(res);
+      const res = await launchCampaign(imagePath, caption, picked);
+      setLaunchResult({
+        ok: !!res?.ok,
+        deployed: res?.deployed ?? [],
+        failed: res?.failed ?? [],
+      });
     } catch (e) {
       setLaunchResult({
         ok: false,
@@ -628,13 +632,15 @@ export default function WorkflowPage() {
                 }`}
               >
                 {launchResult.ok ? (
-                  <>Deployed to {launchResult.deployed.join(", ")}.</>
+                  <>Deployed to {(launchResult.deployed ?? []).join(", ") || "—"}.</>
                 ) : (
                   <>
-                    {launchResult.deployed.length > 0 && (
-                      <>Deployed: {launchResult.deployed.join(", ")}. </>
+                    {(launchResult.deployed?.length ?? 0) > 0 && (
+                      <>Deployed: {launchResult.deployed!.join(", ")}. </>
                     )}
-                    Errors: {launchResult.failed.map((f) => `${f.channel}: ${f.error}`).join("; ")}
+                    {(launchResult.failed?.length ?? 0) > 0
+                      ? `Errors: ${launchResult.failed!.map((f) => `${f.channel}: ${f.error}`).join("; ")}`
+                      : "Launch failed."}
                   </>
                 )}
               </div>
@@ -643,7 +649,7 @@ export default function WorkflowPage() {
             <div className="flex justify-center pt-4">
               <button
                 onClick={handleLaunch}
-                disabled={launching || variations.length === 0}
+                disabled={launching || !selected}
                 className="text-white font-headline font-bold text-lg px-12 py-4 rounded-2xl hover:-translate-y-1 transition-transform shadow-[0_12px_32px_rgba(87,94,112,0.3)] flex items-center gap-3 disabled:opacity-40 disabled:translate-y-0"
                 style={{ background: "linear-gradient(145deg, #575e70 0%, #4b5264 100%)" }}
               >

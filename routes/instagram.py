@@ -9,7 +9,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 
 import config
 import database
@@ -29,8 +29,7 @@ async def verify_webhook(
     hub_challenge: str = Query("", alias="hub.challenge"),
 ):
     """Verify webhook with Instagram."""
-    expected = getattr(config, 'IG_VERIFY_TOKEN', config.META_VERIFY_TOKEN)
-    if hub_mode == "subscribe" and hub_verify_token == expected:
+    if hub_mode == "subscribe" and hub_verify_token == config.META_VERIFY_TOKEN:
         return Response(content=hub_challenge, media_type="text/plain")
     return Response(content="Verification failed", status_code=403)
 
@@ -97,19 +96,29 @@ async def _send_dm(sender_id: str, message: str):
 
 
 async def publish_photo_to_instagram(image_url: str, caption: str) -> bool:
-    """Publish a photo post to the Instagram Business feed via Graph API (2-step)."""
+    """Publish a photo post to the Instagram Business feed via Graph API (2-step).
+    Rule: access_token → params, everything else → json body.
+    Note: IG's photo API has no binary upload — image_url MUST be publicly
+    reachable. Configure SUPABASE_URL/SUPABASE_SERVICE_KEY or PUBLIC_BASE_URL."""
     import asyncio
     import aiohttp
 
-    token = getattr(config, "META_ACCESS_TOKEN", None)
+    token = (
+        getattr(config, "FB_PAGE_ACCESS_TOKEN", None)
+        or getattr(config, "META_ACCESS_TOKEN", None)
+    )
     ig_user_id = getattr(config, "IG_USER_ID", None)
     if not token or not ig_user_id:
         raise RuntimeError("Instagram not configured (IG_USER_ID / META_ACCESS_TOKEN)")
 
     async with aiohttp.ClientSession() as session:
         container_url = f"{GRAPH_API_BASE}/{ig_user_id}/media"
-        params = {"image_url": image_url, "caption": caption, "access_token": token}
-        async with session.post(container_url, params=params, timeout=30) as resp:
+        container_body = {"image_url": image_url}
+        if caption:
+            container_body["caption"] = caption
+        async with session.post(
+            container_url, json=container_body, params={"access_token": token}, timeout=30
+        ) as resp:
             data = await resp.json()
             creation_id = data.get("id")
             if not creation_id:
@@ -119,8 +128,12 @@ async def publish_photo_to_instagram(image_url: str, caption: str) -> bool:
         await asyncio.sleep(5)
 
         publish_url = f"{GRAPH_API_BASE}/{ig_user_id}/media_publish"
-        params = {"creation_id": creation_id, "access_token": token}
-        async with session.post(publish_url, params=params, timeout=15) as resp:
+        async with session.post(
+            publish_url,
+            json={"creation_id": creation_id},
+            params={"access_token": token},
+            timeout=15,
+        ) as resp:
             data = await resp.json()
             if "id" in data:
                 _log.info("Instagram photo published: %s", data["id"])

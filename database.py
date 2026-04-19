@@ -14,13 +14,16 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
 import config
 
-DB_PATH = Path(config.DB_PATH)
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 _local = threading.local()
+_pool: ThreadedConnectionPool | None = None
+_pool_lock = threading.Lock()
+_DB_POOL_MIN = 1
+_DB_POOL_MAX = 10
 
 
 class Row:
@@ -135,29 +138,59 @@ class PostgresConnection:
         self.raw.rollback()
 
 
-def _connect_raw():
-    if not config.DATABASE_URL:
-        raise RuntimeError(
-            "DATABASE_URL is required. Set it to the Supabase Postgres connection string "
-            "in backend .env or Render environment variables."
+def _ensure_pool() -> ThreadedConnectionPool:
+    """Lazy-init the global Postgres pool. Safe to call from any thread."""
+    global _pool
+    if _pool is not None:
+        return _pool
+    with _pool_lock:
+        if _pool is not None:
+            return _pool
+        if not config.DATABASE_URL:
+            raise RuntimeError(
+                "DATABASE_URL is required. Set it to the Supabase Postgres connection string "
+                "in backend .env or Render environment variables."
+            )
+        _pool = ThreadedConnectionPool(
+            _DB_POOL_MIN, _DB_POOL_MAX,
+            dsn=config.DATABASE_URL,
+            sslmode=config.DB_SSLMODE,
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
-    return psycopg2.connect(
-        config.DATABASE_URL,
-        sslmode=config.DB_SSLMODE,
-        connect_timeout=10,
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=10,
-        keepalives_count=5,
-    )
+        logger.info("Postgres pool ready (min=%d max=%d)", _DB_POOL_MIN, _DB_POOL_MAX)
+        return _pool
+
+
+def shutdown_pool() -> None:
+    """Close all pooled connections. Called on FastAPI lifespan exit."""
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            try:
+                _pool.closeall()
+            except Exception:
+                logger.exception("Error closing Postgres pool")
+            _pool = None
 
 
 def get_conn() -> PostgresConnection:
-    """Return a thread-local persistent Supabase Postgres connection."""
+    """Return a thread-local persistent Supabase Postgres connection.
+
+    Each worker thread leases one connection from the pool on first use and
+    keeps it for the thread's lifetime — preserves transactional semantics
+    (execute + commit on the same physical conn) while bounding the total
+    open connections to _DB_POOL_MAX."""
     conn = getattr(_local, "conn", None)
-    if conn is None or conn.closed:
-        conn = PostgresConnection(_connect_raw())
-        _local.conn = conn
+    if conn is not None and not conn.closed:
+        return conn
+    pool = _ensure_pool()
+    raw = pool.getconn(key=threading.get_ident())
+    conn = PostgresConnection(raw)
+    _local.conn = conn
     return conn
 
 
@@ -263,6 +296,9 @@ CREATE TABLE IF NOT EXISTS product_views (
 CREATE INDEX IF NOT EXISTS idx_views_product ON product_views(product_id);
 CREATE INDEX IF NOT EXISTS idx_views_session ON product_views(session_id);
 CREATE INDEX IF NOT EXISTS idx_views_viewed_at ON product_views(viewed_at);
+
+CREATE INDEX IF NOT EXISTS idx_products_wearable ON products(is_wearable) WHERE is_wearable = 1;
+CREATE INDEX IF NOT EXISTS idx_products_in_stock ON products(quantity) WHERE quantity > 0;
 """
 _REQUIRED_TABLES = {
     "products",
@@ -569,10 +605,39 @@ def place_order(sid: str) -> list[int]:
 
 # ── Products (SQL keyword search — no vector store) ────────────────────────
 
+# In-process cache: get_all_products is called on every chat turn (planner +
+# search fallback). The product table changes only when the owner adds/edits/
+# deletes — invalidate via _invalidate_products_cache() in those paths.
+_products_cache: list[dict] | None = None
+_products_cache_lock = threading.Lock()
+
+
+def _invalidate_products_cache() -> None:
+    global _products_cache
+    with _products_cache_lock:
+        _products_cache = None
+
+
 def get_all_products() -> list[dict]:
+    global _products_cache
+    cached = _products_cache
+    if cached is not None:
+        return cached
     conn = get_conn()
     rows = conn.execute("SELECT * FROM products ORDER BY id").fetchall()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    with _products_cache_lock:
+        _products_cache = result
+    return result
+
+
+def get_products_by_ids(ids: list[int]) -> list[dict]:
+    """In-memory lookup from the cached catalog — zero DB round-trips.
+    Cache is invalidated on any insert/update/delete, so stock stays consistent."""
+    if not ids:
+        return []
+    wanted = {int(i) for i in ids}
+    return [p for p in get_all_products() if p.get("id") in wanted]
 
 
 def search_products(query: str, limit: int = 8) -> list[dict]:
@@ -626,9 +691,12 @@ def get_product_by_name(name: str) -> dict | None:
 
 
 def get_product_by_id(pid: int) -> dict | None:
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return dict(row) if row else None
+    """In-memory lookup from the cached catalog — zero DB round-trips."""
+    pid = int(pid)
+    for p in get_all_products():
+        if p.get("id") == pid:
+            return p
+    return None
 
 
 def insert_product(name, category, color, price, description, quantity,
@@ -641,6 +709,7 @@ def insert_product(name, category, color, price, description, quantity,
     )
     pid = cur.fetchone()["id"]
     conn.commit()
+    _invalidate_products_cache()
     return pid
 
 
@@ -652,12 +721,14 @@ def update_product(pid: int, **kwargs):
     vals = list(kwargs.values()) + [pid]
     conn.execute(f"UPDATE products SET {sets}, updated_at=NOW() WHERE id=?", vals)
     conn.commit()
+    _invalidate_products_cache()
 
 
 def delete_product_row(pid: int) -> bool:
     conn = get_conn()
     cur = conn.execute("DELETE FROM products WHERE id=?", (pid,))
     conn.commit()
+    _invalidate_products_cache()
     return cur.rowcount > 0
 
 
