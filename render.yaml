@@ -10,7 +10,7 @@ services:
         value: 3.11.9
 
       # ── Database ──────────────────────────────────────────────────────────
-      # Your external PostgreSQL connection string (Supabase, Neon, etc.)
+      # Prefer direct connection (db.<project>.supabase.co:5432) over pooler.
       - key: DATABASE_URL
         sync: false
       - key: DB_SSLMODE
@@ -33,8 +33,7 @@ services:
         sync: false
 
       # ── Supabase Storage ──────────────────────────────────────────────────
-      # SUPABASE_URL: https://<project-id>.supabase.co
-      # SUPABASE_SERVICE_KEY: Settings → API → service_role secret
+      # Buckets auto-created/upserted to public on startup.
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
@@ -44,7 +43,7 @@ services:
       - key: MCP_BEARER_TOKEN
         sync: false
 
-      # ── Google Gemini (API key mode — no Vertex AI) ───────────────────────
+      # ── Google Gemini ─────────────────────────────────────────────────────
       - key: GOOGLE_API_KEY
         sync: false
       - key: GOOGLE_GENAI_USE_VERTEXAI
@@ -69,23 +68,5 @@ services:
         sync: false
       - key: FB_GRAPH_VERSION
         value: v24.0
-      - key: FB_VERIFY_TOKEN
-        sync: false
       - key: IG_USER_ID
         sync: false
-      - key: IG_VERIFY_TOKEN
-        sync: false
-
-      # ── Channel flags ─────────────────────────────────────────────────────
-      - key: ENABLE_FB_MESSENGER
-        value: "true"
-      - key: ENABLE_INSTAGRAM
-        value: "true"
-      - key: ENABLE_WHATSAPP
-        value: "false"
-
-      # ── Fallback reply messages ───────────────────────────────────────────
-      - key: DM_FALLBACK_REPLY
-        value: "Sorry, I hit a snag. Please try again in a moment."
-      - key: COMMENT_FALLBACK_REPLY
-        value: "Thanks for reaching out! We'll follow up shortly."

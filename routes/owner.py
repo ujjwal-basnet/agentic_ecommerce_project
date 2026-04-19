@@ -12,6 +12,7 @@ import analytics_ml
 import config
 import database
 import llm
+import storage
 from schemas import (
     CaptionRestyleResponse,
     LaunchCampaignResponse,
@@ -269,19 +270,42 @@ async def campaign_launch(
     from routes.facebook import post_photo_to_page
     from routes.instagram import publish_photo_to_instagram
 
-    if image_path.startswith("http://") or image_path.startswith("https://"):
-        image_url = image_path
-    else:
+    is_remote = image_path.startswith("http://") or image_path.startswith("https://")
+    image_bytes: bytes | None = None
+    image_url: str | None = image_path if is_remote else None
+    filename = Path(image_path).name or "campaign.jpg"
+    content_type = "image/jpeg" if filename.lower().endswith((".jpg", ".jpeg")) else "image/png"
+
+    if not is_remote:
         p = Path(image_path)
         if not p.exists():
             raise HTTPException(status_code=400, detail=f"image_path not found: {image_path}")
-        base = config.PUBLIC_BASE_URL
-        if not base:
-            raise HTTPException(
-                status_code=400,
-                detail="PUBLIC_BASE_URL not configured. Set it to your Render (or production) HTTPS URL so Facebook/Instagram can fetch the image.",
-            )
-        image_url = f"{base}/data/campaigns/{p.name}"
+        image_bytes = p.read_bytes()
+
+    # IG Graph API requires a public HTTPS URL and only accepts JPEG.
+    # Resolve image_url lazily: Supabase upload (preferred) → PUBLIC_BASE_URL fallback.
+    if not image_url and image_bytes is not None:
+        # Convert PNG → JPEG in-memory so Instagram accepts it.
+        if content_type != "image/jpeg":
+            import io as _io
+            from PIL import Image as _Image
+            try:
+                img = _Image.open(_io.BytesIO(image_bytes))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = _io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                image_bytes = buf.getvalue()
+                filename = Path(filename).stem + ".jpg"
+                content_type = "image/jpeg"
+            except Exception:
+                _log.exception("PNG→JPEG conversion failed")
+        try:
+            image_url = storage.upload("campaign-images", filename, image_bytes, content_type=content_type)
+        except Exception:
+            _log.exception("Supabase upload for campaign launch failed")
+        if not image_url and config.PUBLIC_BASE_URL:
+            image_url = f"{config.PUBLIC_BASE_URL.rstrip('/')}/data/campaigns/{filename}"
 
     wanted = [c.strip().lower() for c in channels.split(",") if c.strip()]
     deployed: list[str] = []
@@ -289,7 +313,15 @@ async def campaign_launch(
 
     if "facebook" in wanted:
         try:
-            await post_photo_to_page(image_url, caption)
+            if image_bytes is not None:
+                await post_photo_to_page(
+                    caption=caption,
+                    image_bytes=image_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+            else:
+                await post_photo_to_page(image_url=image_url, caption=caption)
             deployed.append("facebook")
         except Exception as e:
             _log.exception("facebook launch failed")
@@ -297,6 +329,11 @@ async def campaign_launch(
 
     if "instagram" in wanted:
         try:
+            if not image_url:
+                raise RuntimeError(
+                    "Instagram requires a public image URL. "
+                    "Configure SUPABASE_URL/SUPABASE_SERVICE_KEY or PUBLIC_BASE_URL."
+                )
             await publish_photo_to_instagram(image_url, caption)
             deployed.append("instagram")
         except Exception as e:

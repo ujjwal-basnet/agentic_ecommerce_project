@@ -5,9 +5,11 @@ Flow: resolve follow-up → plan → execute tools → text → component from r
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -93,11 +95,49 @@ def _build_output(text, component, tool_results, session_id: str) -> dict:
     return output
 
 
+# Words/phrases that signal the query depends on a prior turn.
+# Queries with none of these are self-contained — skip the resolver LLM (~800 ms saved).
+_FOLLOWUP_PATTERN = re.compile(
+    r"\b("
+    r"it|that|this|these|those|same|one|ones|previous|last|prior|"
+    r"again|another|other|more|less|cheaper|pricier|bigger|smaller|"
+    r"instead|rather|also|too|either|"
+    r"blue one|red one|green one|black one|white one|yellow one|"
+    r"the (first|second|third|last)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_resolver(query: str) -> bool:
+    q = (query or "").strip()
+    if not q:
+        return False
+    if len(q.split()) <= 2:  # Very short — almost always a follow-up ("yes", "blue").
+        return True
+    return bool(_FOLLOWUP_PATTERN.search(q))
+
+
 def _sanitize_text(text: str) -> str:
     cleaned = (text or "").replace("**", "").replace("__", "").replace("`", "")
     cleaned = re.sub(r"^\s{0,3}[-*]\s+", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"^\s{0,3}\d+\.\s+", "", cleaned, flags=re.MULTILINE)
     return cleaned.strip()
+
+
+def _save_messages_async(session_id: str, user_input: str, assistant_text: str | None) -> None:
+    """Persist turn messages after the response returns — don't block time-to-last-byte."""
+    async def _save():
+        try:
+            await asyncio.to_thread(database.save_message, session_id, "user", user_input)
+            if assistant_text:
+                await asyncio.to_thread(
+                    database.save_message, session_id, "assistant", assistant_text
+                )
+        except Exception:
+            logger.exception("save_message failed session=%s", session_id)
+
+    asyncio.create_task(_save())
 
 
 async def _resolve_query_context(user_input: str, history: str) -> tuple[str, bool]:
@@ -141,12 +181,28 @@ async def run(
                 "session_id": session_id,
             }
 
+        turn_start = time.perf_counter()
+        timings: dict[str, int] = {}
+
+        def _ms(t0: float) -> int:
+            return int((time.perf_counter() - t0) * 1000)
+
         # Phase 1: Resolve follow-up into a standalone planner query
         session_memory.update_from_message(session_id, user_input)
         history = session_memory.get_context_string(session_id, limit=6)
-        resolver_llm_calls = 1 if history else 0
-        planner_query, used_history = await _resolve_query_context(user_input, history)
+        run_resolver = bool(history) and _needs_resolver(user_input)
+        resolver_llm_calls = 1 if run_resolver else 0
+        t = time.perf_counter()
+        if run_resolver:
+            planner_query, used_history = await _resolve_query_context(user_input, history)
+        else:
+            planner_query, used_history = user_input, False
+        timings["resolver_ms"] = _ms(t)
+
         planner_context = context
+        if history:
+            history_block = f"Recent conversation (last 3 user + 3 assistant):\n{history}"
+            planner_context = "\n".join(p for p in [planner_context, history_block] if p)
         if user_image_path:
             planner_context = "\n".join(
                 p for p in [planner_context, f"User uploaded photo: {user_image_path}"] if p
@@ -160,19 +216,22 @@ async def run(
                 used_history=used_history,
             )
 
-        # Phase 2: Plan with the standalone query. Raw chat history is not passed here.
+        # Phase 2: Plan
+        t = time.perf_counter()
         plan = await create_plan(planner_query, session_id, channel, planner_context)
+        timings["planner_ms"] = _ms(t)
 
         if plan.direct_response:
             direct_text = _sanitize_text(plan.direct_response)
-            database.save_message(session_id, "user", user_input)
-            database.save_message(session_id, "assistant", direct_text)
+            _save_messages_async(session_id, user_input, direct_text)
+            timings["total_ms"] = _ms(turn_start)
             _log(
                 "response",
                 session_id=session_id,
                 text=direct_text[:300],
                 steps=0,
                 llm_calls=1 + resolver_llm_calls,
+                **timings,
             )
             return {
                 "text": direct_text,
@@ -184,22 +243,26 @@ async def run(
         _log("plan_created", session_id=session_id, intent=plan.intent, tools=tools_used)
 
         # Phase 3: Tools
+        t = time.perf_counter()
         tool_results = await execute_tools(plan.tool_calls, session_id, user_image_path)
+        timings["tools_ms"] = _ms(t)
 
-        # Phase 4: Text (LLM #2, native async) — component comes from registry, not an LLM
+        # Phase 4: Text — skipped for product-list tools via _fast_text
+        t = time.perf_counter()
         text = await generate_text(user_input, tool_results, channel)
+        timings["response_ms"] = _ms(t)
         component = _pick_component(tool_results, channel)
 
         # Phase 5: Output
         output = _build_output(_sanitize_text(text), component, tool_results, session_id)
         output["session_id"] = session_id
 
-        database.save_message(session_id, "user", user_input)
-        if output["text"]:
-            database.save_message(session_id, "assistant", output["text"])
+        _save_messages_async(session_id, user_input, output["text"] or None)
 
+        timings["total_ms"] = _ms(turn_start)
         _log("response", session_id=session_id, text=output["text"][:300],
-             component=component, tools=tools_used, llm_calls=2 + resolver_llm_calls)
+             component=component, tools=tools_used,
+             llm_calls=2 + resolver_llm_calls, **timings)
         return output
 
     except Exception as exc:

@@ -569,10 +569,31 @@ def place_order(sid: str) -> list[int]:
 
 # ── Products (SQL keyword search — no vector store) ────────────────────────
 
+# In-process cache: get_all_products is called every chat turn (planner + search fallback).
+# Invalidated on insert/update/delete so get_products_by_ids/get_product_by_id can
+# serve from this cache with zero extra DB round-trips.
+import threading as _threading
+_products_cache: list[dict] | None = None
+_products_cache_lock = _threading.Lock()
+
+
+def _invalidate_products_cache() -> None:
+    global _products_cache
+    with _products_cache_lock:
+        _products_cache = None
+
+
 def get_all_products() -> list[dict]:
+    global _products_cache
+    cached = _products_cache
+    if cached is not None:
+        return cached
     conn = get_conn()
     rows = conn.execute("SELECT * FROM products ORDER BY id").fetchall()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    with _products_cache_lock:
+        _products_cache = result
+    return result
 
 
 def search_products(query: str, limit: int = 8) -> list[dict]:
@@ -625,10 +646,22 @@ def get_product_by_name(name: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_products_by_ids(ids: list[int]) -> list[dict]:
+    """In-memory lookup from cached catalog — zero DB round-trips.
+    Cache invalidates on any insert/update/delete."""
+    if not ids:
+        return []
+    wanted = {int(i) for i in ids}
+    return [p for p in get_all_products() if p.get("id") in wanted]
+
+
 def get_product_by_id(pid: int) -> dict | None:
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return dict(row) if row else None
+    """In-memory lookup from cached catalog — zero DB round-trips."""
+    pid = int(pid)
+    for p in get_all_products():
+        if p.get("id") == pid:
+            return p
+    return None
 
 
 def insert_product(name, category, color, price, description, quantity,
@@ -641,6 +674,7 @@ def insert_product(name, category, color, price, description, quantity,
     )
     pid = cur.fetchone()["id"]
     conn.commit()
+    _invalidate_products_cache()
     return pid
 
 
@@ -652,12 +686,14 @@ def update_product(pid: int, **kwargs):
     vals = list(kwargs.values()) + [pid]
     conn.execute(f"UPDATE products SET {sets}, updated_at=NOW() WHERE id=?", vals)
     conn.commit()
+    _invalidate_products_cache()
 
 
 def delete_product_row(pid: int) -> bool:
     conn = get_conn()
     cur = conn.execute("DELETE FROM products WHERE id=?", (pid,))
     conn.commit()
+    _invalidate_products_cache()
     return cur.rowcount > 0
 
 

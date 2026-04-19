@@ -113,19 +113,30 @@ def generate_campaign_image(
     )
 
     import storage as _storage
-    fname = f"campaign_{uuid.uuid4().hex[:10]}.png"
+    # IG Graph API /media only accepts JPEG. Convert Gemini PNG output to JPEG
+    # so the same URL works for both Facebook and Instagram posts.
+    fname = f"campaign_{uuid.uuid4().hex[:10]}.jpg"
 
     for cand in response.candidates or []:
         parts = getattr(cand.content, "parts", []) or []
         for part in parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
-                url = _storage.upload("campaign-images", fname, inline.data)
+                img = Image.open(io.BytesIO(inline.data))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                jpg_bytes = buf.getvalue()
+
+                url = _storage.upload(
+                    "campaign-images", fname, jpg_bytes, content_type="image/jpeg"
+                )
                 if url:
                     log.info("campaign_visual: uploaded to %s", url)
                     return url
                 out_path = CAMPAIGN_DIR / fname
-                out_path.write_bytes(inline.data)
+                out_path.write_bytes(jpg_bytes)
                 log.info("campaign_visual: wrote %s", out_path)
                 return str(out_path)
 
