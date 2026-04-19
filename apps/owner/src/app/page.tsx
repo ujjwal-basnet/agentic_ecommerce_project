@@ -20,6 +20,7 @@ interface Product {
   quantity: number;
   image_path: string;
   is_wearable: number;
+  tags?: string;
 }
 
 type NavTab = "catalog" | "settings";
@@ -104,8 +105,8 @@ export default function OwnerDashboard() {
         } else {
           const name = form.get("name") || "";
           const price = form.get("price") || "";
-          const desc = form.get("description") || "";
-          const caption = `${name} - Rs.${price}\n${desc}\n\nShop Now at SmartShop!`;
+          const tags = form.get("tags") || "";
+          const caption = `${name} - Rs.${price}\n${tags}\n\nShop Now at SmartShop!`;
           const fbRes = await postToFacebook(imageFile, caption);
           setFbStatus(fbRes?.success
             ? { ok: true, msg: "Product added and posted to Facebook!" }
@@ -405,14 +406,18 @@ export default function OwnerDashboard() {
             <form onSubmit={handleAddProduct} className="space-y-4">
               <Field name="name" label="Product Name" required />
               <div className="grid grid-cols-2 gap-4">
-                <Field name="category" label="Category" required />
+                <Field name="category" label="Category (optional)" />
                 <Field name="color" label="Color" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Field name="price" label="Price (Rs.)" type="number" required />
                 <Field name="quantity" label="Stock Quantity" type="number" required />
               </div>
-              <Field name="description" label="Description" />
+              <Field
+                name="tags"
+                label="Tags (comma-separated)"
+                placeholder="e.g. gaming, rtx, 16gb"
+              />
               <div>
                 <label className="block text-[10px] uppercase tracking-[0.18em] text-muted-2 font-bold mb-2">Image</label>
                 <input type="file" name="image" accept="image/*" className="text-sm w-full" />
@@ -461,7 +466,19 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode; 
   );
 }
 
-function Field({ name, label, type = "text", required = false }: { name: string; label: string; type?: string; required?: boolean }) {
+function Field({
+  name,
+  label,
+  type = "text",
+  required = false,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+}) {
   return (
     <div>
       <label className="block text-[10px] uppercase tracking-[0.18em] text-muted-2 font-bold mb-2">{label}</label>
@@ -469,6 +486,7 @@ function Field({ name, label, type = "text", required = false }: { name: string;
         name={name}
         type={type}
         required={required}
+        placeholder={placeholder}
         className="w-full bg-soft border border-line rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#5b6478]/30 focus:ring-1 focus:ring-[#5b6478]/10 font-body"
       />
     </div>

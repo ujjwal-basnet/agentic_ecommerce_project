@@ -69,23 +69,5 @@ services:
         sync: false
       - key: FB_GRAPH_VERSION
         value: v24.0
-      - key: FB_VERIFY_TOKEN
-        sync: false
       - key: IG_USER_ID
         sync: false
-      - key: IG_VERIFY_TOKEN
-        sync: false
-
-      # ── Channel flags ─────────────────────────────────────────────────────
-      - key: ENABLE_FB_MESSENGER
-        value: "true"
-      - key: ENABLE_INSTAGRAM
-        value: "true"
-      - key: ENABLE_WHATSAPP
-        value: "false"
-
-      # ── Fallback reply messages ───────────────────────────────────────────
-      - key: DM_FALLBACK_REPLY
-        value: "Sorry, I hit a snag. Please try again in a moment."
-      - key: COMMENT_FALLBACK_REPLY
-        value: "Thanks for reaching out! We'll follow up shortly."

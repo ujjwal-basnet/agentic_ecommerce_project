@@ -85,6 +85,11 @@ FIX.MD
 fix_plan.md
 
 .windsurf
+.claude/
+.skills/
 
+# Markdown files (project docs)
+*.md
+!README.md
 
 .vscode

@@ -12,6 +12,8 @@ import config
 import database
 import llm
 import session_memory
+import storage
+from google_client import get_chat_model, get_genai_client
 from thread_pool import init_thread_pool, shutdown_thread_pool
 from registry import get_registry
 from routes.auth import router as auth_router
@@ -58,14 +60,25 @@ async def lifespan(app: FastAPI):
 
         database.startup()
         session_memory.init_memory_store()
+        storage.ensure_buckets()
         get_registry()
         executor = init_thread_pool()
         asyncio.get_running_loop().set_default_executor(executor)
+
+        # Warm Gemini singletons so the first chat / try-on call doesn't pay cold init.
+        for name, fn in (("chat", get_chat_model), ("genai", get_genai_client)):
+            try:
+                fn()
+                logger.info("Preloaded Gemini %s client", name)
+            except Exception as e:
+                logger.warning("Skipped Gemini %s preload: %s", name, e)
+
         logger.info("SmartShop API ready on http://localhost:8000")
         try:
             yield
         finally:
             shutdown_thread_pool()
+            database.shutdown_pool()
 
 
 app = FastAPI(title="SmartShop", version="2.0", lifespan=lifespan)

@@ -1,6 +1,7 @@
 """Owner dashboard API routes — analytics, products CRUD, facebook, campaign workflow."""
 
 from __future__ import annotations
+import json
 import logging
 import os
 import uuid
@@ -9,9 +10,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 import analytics_ml
+import catalog_generator
 import config
 import database
 import llm
+from registry import get_registry
 from schemas import (
     CaptionRestyleResponse,
     LaunchCampaignResponse,
@@ -265,31 +268,73 @@ async def campaign_launch(
     caption: str = Form(""),
     channels: str = Form("facebook"),  # comma-separated: "facebook,instagram"
 ):
-    """Deploy the generated visual + caption to selected channels."""
+    """Deploy the visual + caption to selected channels via Graph API.
+
+    Facebook accepts binary uploads, so we read the bytes once and post directly
+    (no public URL required). Instagram's Graph API only accepts a hosted
+    image_url, so we fall back to: (1) the original URL if it's already remote,
+    (2) a Supabase upload, (3) PUBLIC_BASE_URL + local serve path.
+    """
+    import storage
     from routes.facebook import post_photo_to_page
     from routes.instagram import publish_photo_to_instagram
 
-    if image_path.startswith("http://") or image_path.startswith("https://"):
-        image_url = image_path
-    else:
+    wanted = [c.strip().lower() for c in channels.split(",") if c.strip()]
+
+    is_remote = image_path.startswith("http://") or image_path.startswith("https://")
+    image_bytes: bytes | None = None
+    image_url: str | None = image_path if is_remote else None
+    filename = Path(image_path).name or "campaign.png"
+    content_type = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+
+    if not is_remote:
         p = Path(image_path)
         if not p.exists():
             raise HTTPException(status_code=400, detail=f"image_path not found: {image_path}")
-        base = config.PUBLIC_BASE_URL
-        if not base:
-            raise HTTPException(
-                status_code=400,
-                detail="PUBLIC_BASE_URL not configured. Set it to your Render (or production) HTTPS URL so Facebook/Instagram can fetch the image.",
-            )
-        image_url = f"{base}/data/campaigns/{p.name}"
+        image_bytes = p.read_bytes()
 
-    wanted = [c.strip().lower() for c in channels.split(",") if c.strip()]
+    # Instagram requires a public URL; resolve one lazily if IG is selected.
+    if "instagram" in wanted and not image_url:
+        # IG Graph API /media only accepts JPEG. Convert in-memory if we have PNG bytes.
+        ig_bytes, ig_filename, ig_ct = image_bytes, filename, content_type
+        if ig_bytes is not None and content_type != "image/jpeg":
+            import io
+            from PIL import Image
+            try:
+                img = Image.open(io.BytesIO(ig_bytes))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                ig_bytes = buf.getvalue()
+                ig_filename = Path(filename).stem + ".jpg"
+                ig_ct = "image/jpeg"
+            except Exception:
+                _log.exception("PNG→JPEG conversion for Instagram failed")
+
+        if ig_bytes is not None:
+            try:
+                image_url = storage.upload("campaign-images", ig_filename, ig_bytes, content_type=ig_ct)
+            except Exception:
+                _log.exception("Supabase upload for Instagram failed")
+                image_url = None
+        if not image_url and config.PUBLIC_BASE_URL:
+            image_url = f"{config.PUBLIC_BASE_URL.rstrip('/')}/data/campaigns/{ig_filename}"
+
     deployed: list[str] = []
     failed: list[dict] = []
 
     if "facebook" in wanted:
         try:
-            await post_photo_to_page(image_url, caption)
+            if image_bytes is not None:
+                await post_photo_to_page(
+                    caption=caption,
+                    image_bytes=image_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+            else:
+                await post_photo_to_page(image_url=image_url, caption=caption)
             deployed.append("facebook")
         except Exception as e:
             _log.exception("facebook launch failed")
@@ -297,6 +342,11 @@ async def campaign_launch(
 
     if "instagram" in wanted:
         try:
+            if not image_url:
+                raise RuntimeError(
+                    "Instagram requires a public image URL. Configure SUPABASE_URL/"
+                    "SUPABASE_SERVICE_KEY or PUBLIC_BASE_URL so the image is reachable."
+                )
             await publish_photo_to_instagram(image_url, caption)
             deployed.append("instagram")
         except Exception as e:
@@ -313,14 +363,28 @@ async def list_products():
     return database.get_all_products()
 
 
+def _tags_to_json(raw: str) -> str:
+    items = [t.strip() for t in (raw or "").split(",") if t.strip()]
+    return json.dumps(items)
+
+
+def _refresh_catalog() -> None:
+    try:
+        catalog_generator.regenerate_products_md()
+        get_registry().reload_product_catalog()
+    except Exception:
+        _log.exception("products.md regeneration failed")
+
+
 @router.post("/products/new", response_model=ProductCreateResponse)
 async def new_product(
     name: str = Form(),
-    category: str = Form(),
     price: float = Form(),
     quantity: int = Form(),
+    category: str = Form(""),
     color: str = Form(""),
     description: str = Form(""),
+    tags: str = Form(""),
     image: UploadFile | None = File(None),
     is_wearable: bool = Form(False),
 ):
@@ -333,9 +397,11 @@ async def new_product(
     pid = database.insert_product(
         name=name, category=category, color=color, price=price,
         description=description, quantity=quantity,
-        image_path=image_path, tags="[]", is_wearable=int(is_wearable),
+        image_path=image_path, tags=_tags_to_json(tags),
+        is_wearable=int(is_wearable),
     )
     analytics_ml.invalidate_cache()
+    _refresh_catalog()
     return {"success": True, "product_id": pid}
 
 
@@ -343,6 +409,7 @@ async def new_product(
 async def delete_product(product_id: int = Form(...)):
     ok = database.delete_product_row(product_id)
     analytics_ml.invalidate_cache()
+    _refresh_catalog()
     return {"ok": ok}
 
 
@@ -355,6 +422,7 @@ async def update_product(
     quantity: int = Form(None),
     color: str = Form(None),
     description: str = Form(None),
+    tags: str = Form(None),
 ):
     kwargs = {}
     if name is not None: kwargs["name"] = name
@@ -363,9 +431,11 @@ async def update_product(
     if quantity is not None: kwargs["quantity"] = quantity
     if color is not None: kwargs["color"] = color
     if description is not None: kwargs["description"] = description
+    if tags is not None: kwargs["tags"] = _tags_to_json(tags)
     if kwargs:
         database.update_product(product_id, **kwargs)
         analytics_ml.invalidate_cache()
+        _refresh_catalog()
     return {"success": True}
 
 

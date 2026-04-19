@@ -7,39 +7,15 @@ import logging
 import uuid
 from pathlib import Path
 
-from google import genai
-from google.oauth2 import service_account
 from PIL import Image
 
 import config
+from google_client import get_genai_client
 
 log = logging.getLogger("smartshop.campaign_visual")
 
 CAMPAIGN_DIR = Path(config.CAMPAIGN_DIR)
 CAMPAIGN_DIR.mkdir(parents=True, exist_ok=True)
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is not None:
-        return _client
-
-    if config.GOOGLE_GENAI_USE_VERTEXAI:
-        creds = service_account.Credentials.from_service_account_file(
-            str(Path(config.GOOGLE_APPLICATION_CREDENTIALS).expanduser()),
-            scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
-        _client = genai.Client(
-            vertexai=True,
-            project=config.GOOGLE_CLOUD_PROJECT,
-            location=config.GOOGLE_CLOUD_LOCATION,
-            credentials=creds,
-        )
-    else:
-        _client = genai.Client(api_key=config.GOOGLE_API_KEY)
-    return _client
 
 
 def _load_image(path: str | None) -> Image.Image | None:
@@ -106,26 +82,37 @@ def generate_campaign_image(
     if background_img is not None:
         contents.append(background_img)
 
-    client = _get_client()
+    client = get_genai_client()
     response = client.models.generate_content(
         model=config.GEMINI_IMAGE_MODEL,
         contents=contents,
     )
 
     import storage as _storage
-    fname = f"campaign_{uuid.uuid4().hex[:10]}.png"
+    # Instagram Graph API rejects PNG for /media — store campaign images as JPEG
+    # so the same URL works on both FB and IG. Quality 90 matches typical marketing use.
+    fname = f"campaign_{uuid.uuid4().hex[:10]}.jpg"
 
     for cand in response.candidates or []:
         parts = getattr(cand.content, "parts", []) or []
         for part in parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
-                url = _storage.upload("campaign-images", fname, inline.data)
+                img = Image.open(io.BytesIO(inline.data))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                jpg_bytes = buf.getvalue()
+
+                url = _storage.upload(
+                    "campaign-images", fname, jpg_bytes, content_type="image/jpeg"
+                )
                 if url:
                     log.info("campaign_visual: uploaded to %s", url)
                     return url
                 out_path = CAMPAIGN_DIR / fname
-                out_path.write_bytes(inline.data)
+                out_path.write_bytes(jpg_bytes)
                 log.info("campaign_visual: wrote %s", out_path)
                 return str(out_path)
 
