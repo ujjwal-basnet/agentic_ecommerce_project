@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -17,6 +17,8 @@ services:
         value: require
 
       # ── File paths ────────────────────────────────────────────────────────
+      - key: PRODUCTS_MD_PATH
+        value: data/products.md
       - key: PRODUCT_IMAGES_DIR
         value: data/products
       - key: USER_UPLOADS_DIR
@@ -38,6 +40,16 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
+
+      # ── Auth gate ─────────────────────────────────────────────────────────
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD_HASH
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRY_HOURS
+        value: "72"
 
       # ── MCP server ────────────────────────────────────────────────────────
       - key: MCP_BEARER_TOKEN
