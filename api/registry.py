@@ -45,6 +45,11 @@ _TOOL_METADATA: dict[str, dict[str, Any]] = {
         "component": "CartConfirmation",
         "writes": "cart",
     },
+    "checkout_cart": {
+        "parallel_safe": False,
+        "component": "CartConfirmation",
+        "writes": "orders",
+    },
     "perform_virtual_try_on": {
         "parallel_safe": False,
         "component": None,
@@ -152,6 +157,7 @@ class ToolRegistry:
             add_to_cart,
             remove_from_cart,
             clear_cart,
+            checkout_cart,
             perform_virtual_try_on,
             get_user_history,
             search_knowledge_base,
@@ -235,6 +241,13 @@ class ToolRegistry:
                 "description": "Clear the entire shopping cart",
                 "args": {"session_id": "str (auto-injected)"},
                 "use_when": "User says 'clear cart', 'empty cart', 'remove everything'",
+            },
+            {
+                "name": "checkout_cart",
+                "fn": checkout_cart,
+                "description": "Place an order from the current cart",
+                "args": {"session_id": "str (auto-injected)"},
+                "use_when": "User says 'checkout', 'proceed', 'place order', 'buy now', or 'checkout this'. If the cart is empty, this tool returns an empty-cart message.",
             },
             {
                 "name": "perform_virtual_try_on",
