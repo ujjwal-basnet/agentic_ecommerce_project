@@ -64,6 +64,7 @@ JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "72"))
 
 # Remote MCP access for Claude/Cursor/etc.
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+MCP_PUBLIC = os.getenv("MCP_PUBLIC", "false").lower() in {"1", "true", "yes", "on"}
 
 # ── Email receipts (SMTP) ────────────────────────────────────────────────
 SMTP_HOST = os.getenv("SMTP_HOST", "")
