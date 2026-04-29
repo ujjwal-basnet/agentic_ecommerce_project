@@ -185,6 +185,14 @@ export async function logout(sessionId: string) {
   await gatedFetch(apiUrl("/api/auth/logout"), { method: "POST", body });
 }
 
+export async function deleteAccount(sessionId: string): Promise<{ ok: boolean; deleted: boolean }> {
+  const body = new FormData();
+  body.append("session_id", sessionId);
+  const res = await gatedFetch(apiUrl("/api/auth/delete-account"), { method: "POST", body });
+  if (!res.ok) throw new Error((await res.text()) || "delete account failed");
+  return res.json();
+}
+
 export function trackView(sessionId: string, productId: number, searchQuery?: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
