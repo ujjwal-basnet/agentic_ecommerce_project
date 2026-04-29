@@ -43,3 +43,9 @@ async def me(session_id: str):
 async def logout(session_id: str = Form(...)):
     database.unbind_session_user(session_id)
     return {"ok": True}
+
+
+@router.post("/api/auth/delete-account")
+async def delete_account(session_id: str = Form(...)):
+    deleted = database.delete_account_by_session(session_id)
+    return {"ok": True, "deleted": deleted}
