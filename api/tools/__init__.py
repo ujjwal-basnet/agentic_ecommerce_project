@@ -7,14 +7,14 @@ from api.tools.products import (
     get_products_by_ids,
     search_products,
 )
-from api.tools.cart import add_to_cart, clear_cart, remove_from_cart, view_cart
+from api.tools.cart import add_to_cart, checkout_cart, clear_cart, remove_from_cart, view_cart
 from api.tools.history import get_user_history
 from api.tools.knowledge import search_knowledge_base
 from api.tools.tryon import perform_virtual_try_on
 
 PRODUCT_TOOLS = [search_products, get_products_by_ids]
 PRODUCT_HELPERS = [get_all_products, get_product_by_id, get_products_by_category]
-CART_TOOLS = [view_cart, add_to_cart, remove_from_cart, clear_cart]
+CART_TOOLS = [view_cart, add_to_cart, remove_from_cart, clear_cart, checkout_cart]
 CONTEXT_TOOLS = [get_user_history]
 KB_TOOLS = [search_knowledge_base]
 TRY_ON_TOOLS = [perform_virtual_try_on]
@@ -27,6 +27,7 @@ __all__ = [
     "get_products_by_ids",
     "search_products",
     "add_to_cart",
+    "checkout_cart",
     "clear_cart",
     "remove_from_cart",
     "view_cart",
