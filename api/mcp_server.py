@@ -32,6 +32,9 @@ def _normalize_session_id(session_id: str | None) -> str:
 
 class MCPBearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        if config.MCP_PUBLIC:
+            return await call_next(request)
+
         expected = config.MCP_BEARER_TOKEN.strip()
         if not expected:
             return JSONResponse(
