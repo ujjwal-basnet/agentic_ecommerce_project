@@ -93,3 +93,31 @@ def get_user_by_session(session_id: str) -> dict | None:
         (session_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def delete_account_by_session(session_id: str) -> bool:
+    """Delete the customer account bound to a session and purge its user data."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT user_id FROM sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    user_id = row["user_id"] if row and row["user_id"] is not None else None
+
+    if user_id is None:
+        conn.execute("DELETE FROM product_views WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM orders WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM cart_items WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM wishlists WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        conn.commit()
+        return False
+
+    conn.execute("DELETE FROM product_views WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM orders WHERE user_id = ? OR session_id = ?", (user_id, session_id))
+    conn.execute("DELETE FROM cart_items WHERE user_id = ? OR session_id = ?", (user_id, session_id))
+    conn.execute("DELETE FROM wishlists WHERE user_id = ? OR session_id = ?", (user_id, session_id))
+    conn.execute("DELETE FROM sessions WHERE user_id = ? OR id = ?", (user_id, session_id))
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    return True
