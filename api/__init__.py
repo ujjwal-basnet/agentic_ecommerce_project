@@ -1,0 +1,1 @@
+"""SmartShop backend package."""
