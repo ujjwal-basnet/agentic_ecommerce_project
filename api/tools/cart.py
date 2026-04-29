@@ -163,3 +163,44 @@ def clear_cart(session_id: str) -> str:
     except Exception:
         logger.exception("clear_cart failed")
         raise
+
+
+@tool
+def checkout_cart(session_id: str) -> str:
+    """Place an order from the current cart. Use when user says checkout, proceed, place order, or buy now."""
+    try:
+        cart = database.db_get_cart(session_id)
+        if not cart:
+            return json.dumps(
+                {
+                    "success": False,
+                    "message": "Your cart is empty.",
+                    "text": "Your cart is empty.",
+                    "order_ids": [],
+                    "count": 0,
+                    "total": 0,
+                    "cart_count": 0,
+                }
+            )
+
+        count, total = database.cart_totals(cart)
+        order_ids = database.place_order(session_id)
+        analytics_ml.invalidate_cache()
+        message = f"Order placed! {count} item(s) totaling Rs. {total}."
+        return json.dumps(
+            {
+                "success": True,
+                "message": message,
+                "text": message,
+                "order_ids": order_ids,
+                "count": count,
+                "total": total,
+                "cart_count": 0,
+                "cart_total": 0,
+                "cart_total_items": 0,
+                "cart_total_price": 0,
+            }
+        )
+    except Exception:
+        logger.exception("checkout_cart failed")
+        raise
