@@ -4,14 +4,12 @@ import ProductList from "./ProductList";
 import CartDrawer from "./CartDrawer";
 import CartConfirmation from "./CartConfirmation";
 import RecommendGrid from "./RecommendGrid";
-import WeatherCard from "./WeatherCard";
 
 export const REGISTRY: Record<string, React.ComponentType<any>> = {
   ProductList,
   CartDrawer,
   CartConfirmation,
   RecommendGrid,
-  WeatherCard,
 };
 
 export function renderGenUI(
