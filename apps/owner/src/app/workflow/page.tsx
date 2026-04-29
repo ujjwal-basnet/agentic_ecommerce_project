@@ -157,7 +157,9 @@ export default function WorkflowPage() {
         backgroundPreset: backgroundPhoto ? null : backgroundPreset,
       });
       if (res.success && res.image_path && res.image_url) {
-        const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+          .replace(/\/+$/, "")
+          .replace(/\/api$/i, "");
         const fullUrl = res.image_url.startsWith("http") ? res.image_url : `${base}${res.image_url}`;
         setVariations((prev) => {
           const next = [...prev, { image_path: res.image_path!, image_url: fullUrl }];
@@ -176,11 +178,12 @@ export default function WorkflowPage() {
 
   async function handleLaunch() {
     const active = variations[activeVariant];
-    if (!active) {
+    const launchImagePath = active?.image_path || selected?.image_path;
+    if (!launchImagePath) {
       setLaunchResult({
         ok: false,
         deployed: [],
-        failed: [{ channel: "preflight", error: "Generate at least one visual first." }],
+        failed: [{ channel: "preflight", error: "Select a product with an image first." }],
       });
       return;
     }
@@ -196,7 +199,7 @@ export default function WorkflowPage() {
     setLaunching(true);
     setLaunchResult(null);
     try {
-      const res = await launchCampaign(active.image_path, caption, picked);
+      const res = await launchCampaign(launchImagePath, caption, picked);
       setLaunchResult(res);
     } catch (e) {
       setLaunchResult({
@@ -643,7 +646,7 @@ export default function WorkflowPage() {
             <div className="flex justify-center pt-4">
               <button
                 onClick={handleLaunch}
-                disabled={launching || variations.length === 0}
+                disabled={launching || !selected?.image_path}
                 className="text-white font-headline font-bold text-lg px-12 py-4 rounded-2xl hover:-translate-y-1 transition-transform shadow-[0_12px_32px_rgba(87,94,112,0.3)] flex items-center gap-3 disabled:opacity-40 disabled:translate-y-0"
                 style={{ background: "linear-gradient(145deg, #575e70 0%, #4b5264 100%)" }}
               >
