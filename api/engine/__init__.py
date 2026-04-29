@@ -100,7 +100,13 @@ def _build_output(text, component, tool_results, session_id: str) -> dict:
         ):
             output["products"] = tr.data.get("products", [])
             output["data"] = tr.data
-        elif tr.tool in ("view_cart", "add_to_cart", "remove_from_cart", "clear_cart"):
+        elif tr.tool in (
+            "view_cart",
+            "add_to_cart",
+            "remove_from_cart",
+            "clear_cart",
+            "checkout_cart",
+        ):
             output["data"] = tr.data
         elif tr.tool == "search_knowledge_base":
             output["data"] = tr.data
