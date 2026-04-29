@@ -1,42 +1,69 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { authHeaders, clearGateToken } from "./gate";
+
+function apiBase(): string {
+  const env = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (env) return env.replace(/\/+$/, "").replace(/\/api$/i, "");
+  if (typeof window !== "undefined") {
+    const { protocol, hostname, port } = window.location;
+    if (port === "8000") return `${protocol}//${hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = apiBase();
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
+
+async function gatedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  for (const [k, v] of Object.entries(authHeaders())) headers.set(k, v);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    clearGateToken();
+    window.location.reload();
+  }
+  return res;
+}
 
 export function imageUrl(path: string): string {
   if (!path) return "";
   if (path.startsWith("http")) return path;
   const clean = path.replace(/^\/+/, "");
-  return `${API}/${clean}`;
+  return apiUrl(`/${clean}`);
 }
 
 // ─── Inventory ─────────────────────────────────────────────────────────
 
 export async function fetchProducts() {
-  const res = await fetch(`${API}/owner/products`);
+  const res = await gatedFetch(apiUrl("/owner/products"));
   return res.json();
 }
 
 export async function addProduct(form: FormData) {
-  const res = await fetch(`${API}/owner/products/new`, { method: "POST", body: form });
+  const res = await gatedFetch(apiUrl("/owner/products/new"), { method: "POST", body: form });
   return res.json();
 }
 
 export async function updateProduct(form: FormData) {
-  const res = await fetch(`${API}/owner/products/update`, { method: "POST", body: form });
+  const res = await gatedFetch(apiUrl("/owner/products/update"), { method: "POST", body: form });
   return res.json();
 }
 
 export async function deleteProduct(productId: number) {
   const body = new FormData();
   body.append("product_id", String(productId));
-  const res = await fetch(`${API}/owner/products/delete`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/owner/products/delete"), { method: "POST", body });
   return res.json();
 }
 
-export async function postToFacebook(image: File, caption: string) {
-  const body = new FormData();
-  body.append("image", image);
-  body.append("caption", caption);
-  const res = await fetch(`${API}/owner/facebook/post`, { method: "POST", body });
-  return res.json();
+export async function postToFacebook(_image: File, _caption: string) {
+  return {
+    success: false,
+    message: "Direct owner Facebook posting is disabled. Use Campaign Launch instead.",
+  };
 }
 
 // ─── Analytics (Lumière Noir) ─────────────────────────────────────────
@@ -93,12 +120,12 @@ export interface OwnerAnalytics {
 }
 
 export async function fetchAnalyticsDashboard(range: ForecastRange): Promise<OwnerAnalytics> {
-  const res = await fetch(`${API}/owner/analytics?range=${range}&trend_limit=3&logistics_limit=20`);
+  const res = await gatedFetch(apiUrl(`/owner/analytics?range=${range}&trend_limit=3&logistics_limit=20`));
   return res.json();
 }
 
 export async function fetchOverview(): Promise<{ stats: OverviewStats }> {
-  const res = await fetch(`${API}/owner/analytics/overview`);
+  const res = await gatedFetch(apiUrl("/owner/analytics/overview"));
   return res.json();
 }
 
@@ -107,17 +134,17 @@ export async function fetchForecast(range: ForecastRange): Promise<{
   points: ForecastPoint[];
   historical_end_index: number;
 }> {
-  const res = await fetch(`${API}/owner/analytics/forecast?range=${range}`);
+  const res = await gatedFetch(apiUrl(`/owner/analytics/forecast?range=${range}`));
   return res.json();
 }
 
 export async function fetchTrending(limit = 3): Promise<{ products: TrendingProduct[] }> {
-  const res = await fetch(`${API}/owner/analytics/trending?limit=${limit}`);
+  const res = await gatedFetch(apiUrl(`/owner/analytics/trending?limit=${limit}`));
   return res.json();
 }
 
 export async function fetchLogistics(limit = 20): Promise<{ rows: LogisticsRow[] }> {
-  const res = await fetch(`${API}/owner/analytics/logistics?limit=${limit}`);
+  const res = await gatedFetch(apiUrl(`/owner/analytics/logistics?limit=${limit}`));
   return res.json();
 }
 
@@ -125,7 +152,7 @@ export async function updateOrderStatus(orderId: number, status: string) {
   const body = new FormData();
   body.append("order_id", String(orderId));
   body.append("status", status);
-  const res = await fetch(`${API}/owner/orders/status`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/owner/orders/status"), { method: "POST", body });
   return res.json();
 }
 
@@ -162,7 +189,7 @@ export async function restyleCaption(
   body.append("product_id", String(productId));
   body.append("tone", tone);
   body.append("language", language);
-  const res = await fetch(`${API}/owner/campaign/caption/restyle`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/owner/campaign/caption/restyle"), { method: "POST", body });
   return res.json() as Promise<{ caption: string; tone: string; language: string }>;
 }
 
@@ -181,7 +208,7 @@ export async function generateCampaignVisual(opts: GenerateVisualOpts) {
   if (opts.backgroundPreset) body.append("background_preset", opts.backgroundPreset);
   if (opts.modelPhoto) body.append("model_photo", opts.modelPhoto);
   if (opts.backgroundPhoto) body.append("background_photo", opts.backgroundPhoto);
-  const res = await fetch(`${API}/owner/campaign/visual/generate`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/owner/campaign/visual/generate"), { method: "POST", body });
   return res.json() as Promise<{
     success: boolean;
     image_path?: string;
@@ -199,7 +226,7 @@ export async function launchCampaign(
   body.append("image_path", imagePath);
   body.append("caption", caption);
   body.append("channels", channels.join(","));
-  const res = await fetch(`${API}/owner/campaign/launch`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/owner/campaign/launch"), { method: "POST", body });
   return res.json() as Promise<{
     ok: boolean;
     deployed: string[];
