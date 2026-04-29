@@ -27,7 +27,7 @@ async def verify_webhook(
     hub_challenge: str = Query("", alias="hub.challenge"),
 ):
     """Verify webhook with Facebook."""
-    expected = getattr(config, "FB_VERIFY_TOKEN", "smartshop-webhook")
+    expected = getattr(config, "FB_VERIFY_TOKEN", None) or config.META_VERIFY_TOKEN
     if hub_mode == "subscribe" and hub_verify_token == expected:
         return Response(content=hub_challenge, media_type="text/plain")
     return Response(content="Verification failed", status_code=403)
@@ -85,7 +85,9 @@ async def _send_text(sender_id: str, text: str):
     """Send plain text message to Facebook."""
     import aiohttp
 
-    token = getattr(config, "META_ACCESS_TOKEN", None)
+    token = getattr(config, "FB_PAGE_ACCESS_TOKEN", None) or getattr(
+        config, "META_ACCESS_TOKEN", None
+    )
     page_id = getattr(config, "FB_PAGE_ID", None)
 
     if not token or not page_id:
