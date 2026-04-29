@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Paperclip, ShoppingBag, Trash2, Clock } from "lucide-react";
-import { fetchSSE, fetchCart, clearChat, uploadPhoto, imageUrl } from "@/lib/api";
+import { ArrowUp, Paperclip, ShoppingBag, Trash2, Clock, UserX } from "lucide-react";
+import { fetchSSE, fetchCart, clearChat, uploadPhoto, imageUrl, deleteAccount } from "@/lib/api";
 import { renderGenUI } from "@/components/genui/Registry";
 import OrderHistory from "@/components/genui/OrderHistory";
 
@@ -139,6 +139,19 @@ export default function Home() {
     setMessages([]);
   }
 
+  async function handleDeleteAccount() {
+    const ok = window.confirm("Delete this customer account and its chat, cart, and orders?");
+    if (!ok) return;
+    try {
+      await deleteAccount(sessionId.current);
+      localStorage.removeItem("smartshop_user");
+      localStorage.removeItem("smartshop_session");
+      window.location.reload();
+    } catch {
+      setMessages((prev) => [...prev, { id: genId(), role: "assistant", text: "Account deletion failed.", ts: timeNow() }]);
+    }
+  }
+
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -175,6 +188,13 @@ export default function Home() {
           <div className="flex items-center space-x-3">
             <button onClick={handleClear} className="p-2 text-on-surface-variant hover:text-on-surface transition-colors active:scale-95" title="Clear chat">
               <Trash2 size={18} />
+            </button>
+            <button
+              onClick={handleDeleteAccount}
+              className="p-2 text-on-surface-variant hover:text-on-surface transition-colors active:scale-95"
+              title="Delete account"
+            >
+              <UserX size={18} />
             </button>
             <button
               onClick={() => setView("orders")}
