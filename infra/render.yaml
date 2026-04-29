@@ -1,0 +1,84 @@
+services:
+  - type: web
+    name: smartshop-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+      # ── Database ──────────────────────────────────────────────────────────
+      # Prefer direct connection (db.<project>.supabase.co:5432) over pooler.
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSLMODE
+        value: require
+
+      # ── File paths ────────────────────────────────────────────────────────
+      - key: PRODUCTS_MD_PATH
+        value: data/products.md
+      - key: PRODUCT_IMAGES_DIR
+        value: data/products
+      - key: USER_UPLOADS_DIR
+        value: data/uploads
+      - key: TRYON_DIR
+        value: data/tryon
+      - key: CAMPAIGN_DIR
+        value: data/campaigns
+      - key: PROTOCOL_LOG_PATH
+        value: logs/protocol_log.jsonl
+
+      # ── Public URL (set AFTER first deploy to your Render URL) ────────────
+      - key: PUBLIC_BASE_URL
+        sync: false
+
+      # ── Supabase Storage ──────────────────────────────────────────────────
+      # Buckets auto-created/upserted to public on startup.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+
+      # ── Auth gate ─────────────────────────────────────────────────────────
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD_HASH
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRY_HOURS
+        value: "72"
+
+      # ── MCP server ────────────────────────────────────────────────────────
+      - key: MCP_BEARER_TOKEN
+        sync: false
+
+      # ── Google Gemini ─────────────────────────────────────────────────────
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_GENAI_USE_VERTEXAI
+        value: "false"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_IMAGE_MODEL
+        value: gemini-2.5-flash-image
+
+      # ── Meta / Facebook / Instagram ───────────────────────────────────────
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: FB_PAGE_ID
+        sync: false
+      - key: FB_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: FB_GRAPH_VERSION
+        value: v24.0
+      - key: IG_USER_ID
+        sync: false
