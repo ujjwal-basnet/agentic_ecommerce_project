@@ -1,4 +1,32 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { authHeaders, clearGateToken } from "./gate";
+
+function apiBase(): string {
+  const env = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (env) return env.replace(/\/+$/, "").replace(/\/api$/i, "");
+  if (typeof window !== "undefined") {
+    const { protocol, hostname, port } = window.location;
+    if (port === "8000") return `${protocol}//${hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = apiBase();
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
+
+async function gatedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  for (const [k, v] of Object.entries(authHeaders())) headers.set(k, v);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    clearGateToken();
+    window.location.reload();
+  }
+  return res;
+}
 
 export async function fetchSSE(
   message: string,
@@ -18,7 +46,7 @@ export async function fetchSSE(
   let sawErrorEvent = false;
 
   try {
-    const res = await fetch(`${API}/chat/stream`, { method: "POST", body });
+    const res = await gatedFetch(apiUrl("/chat/stream"), { method: "POST", body });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const reader = res.body?.getReader();
     if (!reader) throw new Error("No stream");
@@ -57,7 +85,7 @@ export async function fetchSSE(
 }
 
 export async function fetchCart(sessionId: string) {
-  const res = await fetch(`${API}/api/cart?session_id=${sessionId}`);
+  const res = await gatedFetch(apiUrl(`/api/cart?session_id=${sessionId}`));
   return res.json();
 }
 
@@ -67,7 +95,7 @@ export async function addToCartDirect(sessionId: string, productName: string, pr
   body.append("product_name", productName);
   body.append("price", String(price));
   body.append("quantity", String(qty));
-  const res = await fetch(`${API}/api/cart/add`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/api/cart/add"), { method: "POST", body });
   return res.json();
 }
 
@@ -76,7 +104,7 @@ export async function updateCartDirect(sessionId: string, productName: string, q
   body.append("session_id", sessionId);
   body.append("product_name", productName);
   body.append("quantity", String(quantity));
-  const res = await fetch(`${API}/api/cart/update`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/api/cart/update"), { method: "POST", body });
   return res.json();
 }
 
@@ -84,33 +112,33 @@ export async function removeCartDirect(sessionId: string, productName: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
   body.append("product_name", productName);
-  const res = await fetch(`${API}/api/cart/remove`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/api/cart/remove"), { method: "POST", body });
   return res.json();
 }
 
 export async function clearChat(sessionId: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
-  await fetch(`${API}/clear-chat`, { method: "POST", body });
+  await gatedFetch(apiUrl("/clear-chat"), { method: "POST", body });
 }
 
 export async function uploadPhoto(sessionId: string, file: File) {
   const body = new FormData();
   body.append("session_id", sessionId);
   body.append("photo", file);
-  const res = await fetch(`${API}/upload-photo`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/upload-photo"), { method: "POST", body });
   return res.json();
 }
 
 export async function checkout(sessionId: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
-  const res = await fetch(`${API}/api/checkout`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/api/checkout"), { method: "POST", body });
   return res.json();
 }
 
 export async function fetchOrders(sessionId: string) {
-  const res = await fetch(`${API}/api/orders?session_id=${sessionId}`);
+  const res = await gatedFetch(apiUrl(`/api/orders?session_id=${sessionId}`));
   return res.json();
 }
 
@@ -118,14 +146,14 @@ export async function tryOnProduct(productId: number, photo: File): Promise<any>
   const body = new FormData();
   body.append("product_id", String(productId));
   body.append("photo", photo);
-  const res = await fetch(`${API}/specialist/tryon`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/specialist/tryon"), { method: "POST", body });
   return res.json();
 }
 
 export function imageUrl(path: string) {
   if (!path) return "";
   if (path.startsWith("http")) return path;
-  return `${API}/${path.replace(/^\//, "")}`;
+  return apiUrl(`/${path.replace(/^\//, "")}`);
 }
 
 // ─── Auth + behavior tracking ─────────────────────────────────────────
@@ -141,20 +169,20 @@ export async function login(sessionId: string, name: string, email: string): Pro
   body.append("session_id", sessionId);
   body.append("name", name);
   body.append("email", email);
-  const res = await fetch(`${API}/api/auth/login`, { method: "POST", body });
+  const res = await gatedFetch(apiUrl("/api/auth/login"), { method: "POST", body });
   if (!res.ok) throw new Error((await res.text()) || "login failed");
   return res.json();
 }
 
 export async function fetchMe(sessionId: string): Promise<{ user: MeUser | null }> {
-  const res = await fetch(`${API}/api/auth/me?session_id=${sessionId}`);
+  const res = await gatedFetch(apiUrl(`/api/auth/me?session_id=${sessionId}`));
   return res.json();
 }
 
 export async function logout(sessionId: string) {
   const body = new FormData();
   body.append("session_id", sessionId);
-  await fetch(`${API}/api/auth/logout`, { method: "POST", body });
+  await gatedFetch(apiUrl("/api/auth/logout"), { method: "POST", body });
 }
 
 export function trackView(sessionId: string, productId: number, searchQuery?: string) {
@@ -163,5 +191,5 @@ export function trackView(sessionId: string, productId: number, searchQuery?: st
   body.append("product_id", String(productId));
   if (searchQuery) body.append("search_query", searchQuery);
   // Fire-and-forget; never block product rendering on tracking.
-  fetch(`${API}/api/track/view`, { method: "POST", body, keepalive: true }).catch(() => {});
+  gatedFetch(apiUrl("/api/track/view"), { method: "POST", body, keepalive: true }).catch(() => {});
 }
