@@ -232,8 +232,7 @@ async def _runflow_generate(
         payload["input"]["safety_tolerance"] = "4"
         payload["input"]["limit_generations"] = True
     elif model_key == "gpt_image_2":
-        payload["input"]["quality"] = "medium"
-        payload["input"]["image_size"] = "auto"
+        payload["input"]["image_size"] = "square"
 
     async with httpx.AsyncClient(timeout=150) as client:
         logger.info("runflow %s: posting payload=%s", model_key, payload)
