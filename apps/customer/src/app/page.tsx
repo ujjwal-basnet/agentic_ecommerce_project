@@ -77,17 +77,27 @@ export default function Home() {
         setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
       };
       
-      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech recognition error", event);
+        setIsListening(false);
+        if (event.error === "not-allowed") {
+          alert("Microphone permission was denied. Please allow microphone access in your browser settings to use voice input.");
+        }
+      };
       recognitionRef.current.onend = () => setIsListening(false);
     }
   }, []);
 
   const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser or over insecure HTTP. Please try using Google Chrome, Microsoft Edge, or Safari over a secure HTTPS connection.");
+      return;
+    }
     if (isListening) {
-      recognitionRef.current?.stop();
+      recognitionRef.current.stop();
     } else {
       try {
-        recognitionRef.current?.start();
+        recognitionRef.current.start();
         setIsListening(true);
       } catch (e) {
         console.error("Speech recognition failed to start", e);
