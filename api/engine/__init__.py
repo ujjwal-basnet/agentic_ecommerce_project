@@ -506,7 +506,7 @@ def _split_bundled_queries(user_input: str) -> list[str]:
         if phrase in cleaned_lower_check:
             # Only block if no separate action verb follows the phrase
             after = cleaned_lower_check[cleaned_lower_check.find(phrase) + len(phrase):]
-            if not re.search(r"(?:and\s+(?:then|also)\s+|then\s+)(?:add|show|find|get)", after, re.IGNORECASE):
+            if not re.search(r"\b(?:and\s+(?:then|also)\s+|then\s+)(?:add|show|find|get)", after, re.IGNORECASE):
                 return [cleaned]
 
     parts = split_re.split(cleaned)
