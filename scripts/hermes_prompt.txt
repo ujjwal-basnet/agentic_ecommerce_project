@@ -1,0 +1,45 @@
+Generate a Python script using PIL (Pillow) to draw a detailed, hand-drawn sketch (pencil/pen on grid paper) style system architecture diagram for the SmartShop project.
+
+The script must meet these guidelines:
+1. Canvas and Background:
+   - Size: 2400 x 1600 pixels, high resolution.
+   - Background color: Off-white/cream paper (#FAF6EE).
+   - Overlay a subtle grid pattern representing graph/sketch paper: draw light-blue/gray lines (color #E4EBF0) every 40 pixels (both horizontal and vertical) with line width 1.
+
+2. Hand-Drawn Sketch Aesthetic:
+   - Define a helper function draw_wobbly_line(draw, p1, p2, color, width=2, wobble=2) that splits a straight line into 6-10 segments and adds a tiny random perpendicular wobble offset (random.uniform(-wobble, wobble)) at each segment point, drawing it twice with slightly different random offsets to simulate pencil/pen overlay.
+   - Define draw_hand_drawn_box(draw, x, y, w, h, color, width=2) that draws the 4 borders using draw_wobbly_line. Let the corners overlap slightly by extending the lines 5-10 pixels beyond the vertices.
+   - Define draw_hand_drawn_arrow(draw, p1, p2, color, width=2) that draws a wobbly line and a wobbly arrowhead pointing backward.
+   - Define draw_wobbly_circle(draw, cx, cy, r, color, width=2) that draws an ellipse/circle by connecting points in a circle with a small random radial wobble and overlap at the end.
+   - Colors should look like ink pens:
+     - Primary outlines: Charcoal Pen (#2D3748)
+     - Web/Client layer: Ink Blue (#1D4ED8 or #2563EB)
+     - Backend/Agent layer: Ink Green (#0D9488)
+     - DB/Retrieval layer: Ink Purple (#7C3AED)
+     - External API layer: Ink Dark Red (#B91C1C)
+
+3. System Content:
+   - Client Storefronts: Web Storefront (Next.js), FB Messenger, IG DM.
+   - External Agents: Cursor / ChatGPT Client (MCP).
+   - FastAPI Backend core pipeline:
+     - Input Sanitizer
+     - Query Rewriter (w/ history context)
+     - LLM Planner Agent
+     - Capability Binder
+     - Parallel DAG Pipeline Executor
+     - Response Generator (SSE streaming, GenUI cards)
+   - Specialist Agents: Product Search Agent, Recommendation Agent, Try-On Agent, Cart Agent, Checkout Agent, Knowledge Agent.
+   - Databases & Storage: Supabase PostgreSQL (products, sessions, cart, orders, history), Pinecone Vector DB, Catalog Files.
+   - Inference/Try-On: vLLM Server + ngrok tunnel, Try-On Image Backend, Meta Graph API.
+   - Flow arrows connecting these modules (e.g. DMs -> webhooks, MCP -> API, Planner -> Binder -> Executor -> Specialists -> DB/RAG, etc.).
+
+4. Fonts:
+   - Use '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf' for body and '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf' for headings (fall back to ImageFont.load_default() if not found).
+
+5. File output:
+   - Save the final image to:
+     - 'report/assets/architecture_diagram.png'
+     - 'typst_proposal/images/architecture_diagram.png'
+     - 'latex_proposal/images/architecture_diagram.png'
+
+Provide ONLY the executable python code inside markdown blocks.

@@ -16,6 +16,18 @@ services:
       - key: DB_SSLMODE
         value: require
 
+      # ── LLM (self-hosted vLLM: RunPod primary, Lightning+ngrok fallback) ──
+      # LLM_BASE_URL = the RunPod proxy URL (…/v1). OPENAI_MODEL must match the
+      # vLLM served-model id exactly. OPENAI_API_KEY can be any non-empty value.
+      - key: LLM_PROVIDER
+        value: openai-compatible
+      - key: LLM_BASE_URL
+        sync: false
+      - key: OPENAI_MODEL
+        value: Qwen/Qwen3-8B-AWQ
+      - key: OPENAI_API_KEY
+        value: vllm-no-key
+
       # ── File paths ────────────────────────────────────────────────────────
       - key: PRODUCTS_MD_PATH
         value: data/products.md
@@ -58,8 +70,6 @@ services:
       # ── Google Gemini ─────────────────────────────────────────────────────
       - key: GOOGLE_API_KEY
         sync: false
-      - key: GOOGLE_GENAI_USE_VERTEXAI
-        value: "false"
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: GEMINI_IMAGE_MODEL

@@ -1,10 +1,56 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartshop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartshop}
+      POSTGRES_DB: smartshop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # seed.sql runs ONCE on a fresh data dir (before the backend connects), so
+      # products land with correct categories and init_db()'s filename-based
+      # auto-seed is skipped. Delete the pgdata volume to re-seed from scratch.
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartshop -d smartshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   api:
     build:
       context: ..
       dockerfile: infra/Dockerfile
+    restart: unless-stopped
     env_file:
       - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+    # Exposed only to loopback; Caddy terminates TLS and proxies in.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Set DOMAIN=api.yourdomain.xyz (pointed at this droplet's IP) for auto-HTTPS.
+      # Left unset → Caddy serves plain HTTP on :80 (fine for a quick check, but the
+      # virtual try-on camera needs HTTPS, so use a real domain for the showcase).
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

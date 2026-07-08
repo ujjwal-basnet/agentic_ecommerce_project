@@ -6,6 +6,7 @@ import {
   Package, BarChart3, Settings, Sparkles, Wand2, Palette, Send,
   CheckCircle2, Upload, Image as ImageIcon, RefreshCw, ArrowLeft, Loader2,
 } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 import {
   fetchProducts,
   imageUrl,
@@ -30,20 +31,20 @@ const LANGUAGES: { key: CampaignLanguage; label: string }[] = [
   { key: "ne", label: "नेपाली" },
 ];
 
-interface BgPreset {
-  id: string;
-  label: string;
-  gradient: string;
-  text: string;
-}
+const PROMPT_TONES = [
+  { id: "aesthetic", label: "Aesthetic" },
+  { id: "cinematic", label: "Cinematic" },
+  { id: "vintage", label: "Vintage" },
+  { id: "minimalist", label: "Minimalist" },
+  { id: "hyperrealistic", label: "Hyper-realistic" },
+];
 
-const BG_PRESETS: BgPreset[] = [
-  { id: "studio_white", label: "Studio White", gradient: "linear-gradient(135deg, #ffffff 0%, #e4e8ea 100%)", text: "text-[#2b3437]" },
-  { id: "studio_noir", label: "Studio Noir", gradient: "linear-gradient(135deg, #2b3437 0%, #05080c 100%)", text: "text-white" },
-  { id: "soft_peach", label: "Soft Peach", gradient: "linear-gradient(135deg, #ffe2d1 0%, #fbb79a 100%)", text: "text-[#7a3b28]" },
-  { id: "concrete", label: "Concrete", gradient: "linear-gradient(135deg, #d9d5ce 0%, #86837a 100%)", text: "text-[#2b3437]" },
-  { id: "coastal_blue", label: "Coastal Blue", gradient: "linear-gradient(135deg, #cfe2ec 0%, #6d94ab 100%)", text: "text-[#1f3845]" },
-  { id: "warm_taupe", label: "Warm Taupe", gradient: "linear-gradient(135deg, #e7ddcc 0%, #b39a78 100%)", text: "text-[#3a2a18]" },
+const IMAGE_MODELS = [
+  { id: "nano_banana", label: "\u{1F193} Nano Banana 2", desc: "FREE · Google · $0.08/img" },
+  { id: "gpt_image_2", label: "\u{1F193} GPT Image 2", desc: "FREE · OpenAI · $0.133/img" },
+  { id: "flux_kontext_720", label: "FLUX Kontext 720p", desc: "Try-on · $0.025/img" },
+  { id: "flux_kontext", label: "FLUX Kontext 1080p", desc: "Best quality · $0.025/img" },
+  { id: "gptimage", label: "GPT Image 1", desc: "OpenAI · $0.02/img" },
 ];
 
 export default function WorkflowPage() {
@@ -69,7 +70,9 @@ export default function WorkflowPage() {
   const [modelPreview, setModelPreview] = useState<string | null>(null);
   const [backgroundPhoto, setBackgroundPhoto] = useState<File | null>(null);
   const [backgroundPreview, setBackgroundPreview] = useState<string | null>(null);
-  const [backgroundPreset, setBackgroundPreset] = useState<string | null>("studio_white");
+  const [promptTone, setPromptTone] = useState<string>("aesthetic");
+  const [generatingPrompt, setGeneratingPrompt] = useState(false);
+  const [imageModel, setImageModel] = useState("nano_banana");
   const [variations, setVariations] = useState<{ image_path: string; image_url: string }[]>([]);
   const [activeVariant, setActiveVariant] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -134,14 +137,52 @@ export default function WorkflowPage() {
     setBackgroundPhoto(file);
     if (backgroundPreview) URL.revokeObjectURL(backgroundPreview);
     setBackgroundPreview(file ? URL.createObjectURL(file) : null);
-    if (file) setBackgroundPreset(null);
   }
 
-  function handlePresetSelect(id: string) {
-    setBackgroundPreset(id);
-    setBackgroundPhoto(null);
-    if (backgroundPreview) URL.revokeObjectURL(backgroundPreview);
-    setBackgroundPreview(null);
+  async function handleGeneratePrompt(toneOverride?: string, alsoGenerateImage?: boolean) {
+    if (!selected) return;
+    setGeneratingPrompt(true);
+    try {
+      const { generateCampaignVisualPrompt } = await import("@/lib/api");
+      const res = await generateCampaignVisualPrompt(selected.id, toneOverride || promptTone);
+      setPrompt(res.prompt);
+      if (alsoGenerateImage) {
+        // Also restyle caption with editorial tone
+        restyleCaption(selected.id, tone, language).then((r) => {
+          if (r?.caption) setCaption(r.caption);
+        });
+        // Trigger image generation with new prompt
+        setGenerating(true);
+        setVisualError(null);
+        const genRes = await generateCampaignVisual({
+          productId: selected.id,
+          prompt: res.prompt,
+          imageModel,
+          modelPhoto,
+          backgroundPhoto,
+          backgroundPreset: null,
+        });
+        if (genRes.success && genRes.image_path && genRes.image_url) {
+          const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+            .replace(/\/+$/, "")
+            .replace(/\/api$/i, "");
+          const fullUrl = genRes.image_url.startsWith("http") ? genRes.image_url : `${base}${genRes.image_url}`;
+          setVariations((prev) => {
+            const next = [...prev, { image_path: genRes.image_path!, image_url: fullUrl }];
+            setActiveVariant(next.length - 1);
+            return next;
+          });
+        } else {
+          setVisualError(genRes.error || "Image generation failed");
+        }
+        setGenerating(false);
+      }
+    } catch (e) {
+      console.error(e);
+      setGenerating(false);
+    } finally {
+      setGeneratingPrompt(false);
+    }
   }
 
   async function handleGenerate() {
@@ -152,9 +193,10 @@ export default function WorkflowPage() {
       const res = await generateCampaignVisual({
         productId: selected.id,
         prompt,
+        imageModel,
         modelPhoto,
         backgroundPhoto,
-        backgroundPreset: backgroundPhoto ? null : backgroundPreset,
+        backgroundPreset: null,
       });
       if (res.success && res.image_path && res.image_url) {
         const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
@@ -215,43 +257,7 @@ export default function WorkflowPage() {
   // ── Render ─────────────────────────────────────────────────────
   return (
     <div className="flex min-h-screen bg-[#f8f9fa] text-[#2b3437]">
-      {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-black/5 flex-shrink-0 flex flex-col">
-        <div className="px-5 pt-6 pb-4">
-          <h2 className="font-headline font-extrabold text-lg tracking-tight">Curator AI</h2>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold mt-0.5">
-            Social Automation
-          </p>
-        </div>
-        <nav className="flex-1 px-3 space-y-1">
-          <Link
-            href="/"
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-[#586064] hover:bg-[#f1f4f6] transition-colors"
-          >
-            <Package size={16} /> Inventory
-          </Link>
-          <Link
-            href="/analytics"
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-[#586064] hover:bg-[#f1f4f6] transition-colors"
-          >
-            <BarChart3 size={16} /> Analytics
-          </Link>
-          <span className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium bg-[#575e70] text-white">
-            <Sparkles size={16} /> Workflow
-          </span>
-          <span className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-[#586064]">
-            <Settings size={16} /> Settings
-          </span>
-        </nav>
-        <div className="px-5 pb-6">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-[#586064] hover:text-[#2b3437] transition-colors"
-          >
-            <ArrowLeft size={12} /> Back to inventory
-          </Link>
-        </div>
-      </aside>
+      <Sidebar />
 
       {/* Main */}
       <main className="flex-1">
@@ -500,48 +506,84 @@ export default function WorkflowPage() {
                   </div>
                 </div>
 
-                {/* Background presets */}
+                {/* Image Model Selector */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-label text-[10px] uppercase tracking-widest text-[#586064] font-bold">
-                      Studio Presets
-                    </label>
-                    {backgroundPhoto && (
-                      <span className="text-[10px] text-[#586064]">
-                        (using uploaded backdrop — presets disabled)
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {BG_PRESETS.map((bg) => {
-                      const active = !backgroundPhoto && backgroundPreset === bg.id;
+                  <label className="block font-label text-[10px] uppercase tracking-widest text-[#586064] font-bold">
+                    AI Model
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {IMAGE_MODELS.map((m) => {
+                      const active = imageModel === m.id;
                       return (
                         <button
-                          key={bg.id}
-                          onClick={() => handlePresetSelect(bg.id)}
-                          disabled={!!backgroundPhoto}
-                          className={`aspect-square rounded-xl flex items-end p-2 text-left transition-all ring-1 ${
+                          key={m.id}
+                          onClick={() => setImageModel(m.id)}
+                          className={`px-3 py-1.5 font-label text-[11px] uppercase tracking-widest rounded-full cursor-pointer transition-colors border ${
                             active
-                              ? "ring-[#575e70] ring-2 scale-[1.02]"
-                              : "ring-black/5 hover:ring-[#575e70]/40"
-                          } ${backgroundPhoto ? "opacity-30 cursor-not-allowed" : ""}`}
-                          style={{ background: bg.gradient }}
-                          title={bg.label}
+                              ? "bg-[#2b3437] text-white border-[#2b3437]"
+                              : "bg-transparent text-[#586064] border-[#eaeff1] hover:border-[#2b3437] hover:text-[#2b3437]"
+                          }`}
+                          title={m.desc}
                         >
-                          <span className={`text-[10px] font-bold uppercase tracking-widest ${bg.text}`}>
-                            {bg.label}
-                          </span>
+                          {m.label}
                         </button>
                       );
                     })}
                   </div>
+                  <p className="text-[10px] text-[#586064]">
+                    {IMAGE_MODELS.find((m) => m.id === imageModel)?.desc}
+                  </p>
+                </div>
+
+                {/* Prompt Tones */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-label text-[10px] uppercase tracking-widest text-[#586064] font-bold">
+                      Prompt Tone
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {PROMPT_TONES.map((t) => {
+                      const active = promptTone === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            setPromptTone(t.id);
+                            handleGeneratePrompt(t.id, true);
+                          }}
+                          disabled={generating || generatingPrompt || !selected}
+                          className={`px-3 py-1 font-label text-[11px] uppercase tracking-widest rounded-full cursor-pointer transition-colors border disabled:opacity-40 ${
+                            active
+                              ? "bg-[#2b3437] text-white border-[#2b3437]"
+                              : "bg-transparent text-[#586064] border-[#eaeff1] hover:border-[#2b3437] hover:text-[#2b3437]"
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-[#586064] mt-1">
+                    Click a tone to auto-generate prompt + caption + image
+                  </p>
                 </div>
 
                 {/* Prompt */}
                 <div className="bg-[#f1f4f6] rounded-2xl p-6 ring-1 ring-black/5 focus-within:ring-[#575e70]/30 focus-within:bg-white transition-all">
-                  <label className="block font-label text-[10px] uppercase tracking-widest text-[#586064] font-bold mb-3">
-                    Direction Prompt
-                  </label>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block font-label text-[10px] uppercase tracking-widest text-[#586064] font-bold">
+                      Direction Prompt
+                    </label>
+                    <button
+                      onClick={() => handleGeneratePrompt()}
+                      disabled={generatingPrompt || !selected}
+                      className="text-xs text-[#575e70] hover:text-[#2b3437] font-bold flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {generatingPrompt ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                      AI Generate
+                    </button>
+                  </div>
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}

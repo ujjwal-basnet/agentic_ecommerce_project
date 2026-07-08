@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Package, BarChart3, Settings, Sparkles, ArrowLeft, RefreshCw } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 import {
   fetchAnalyticsDashboard,
   ForecastPoint,
@@ -45,32 +46,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="flex min-h-screen bg-background text-on-background font-body antialiased">
-      {/* Sidebar */}
-      <aside className="w-56 bg-surface-container-lowest flex-shrink-0 flex flex-col">
-        <div className="px-5 pt-6 pb-4">
-          <h2 className="font-headline font-extrabold text-lg tracking-tight text-on-background">Lumière Noir</h2>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-on-surface-variant font-bold mt-0.5">Analytics Engine</p>
-        </div>
-        <nav className="flex-1 px-3 space-y-1">
-          <Link href="/" className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-on-surface-variant hover:bg-surface-container-low transition-colors">
-            <Package size={16} /> Inventory
-          </Link>
-          <span className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium bg-primary text-on-primary">
-            <BarChart3 size={16} /> Analytics
-          </span>
-          <Link href="/workflow" className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-on-surface-variant hover:bg-surface-container-low transition-colors">
-            <Sparkles size={16} /> Workflow
-          </Link>
-          <span className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-on-surface-variant">
-            <Settings size={16} /> Settings
-          </span>
-        </nav>
-        <div className="px-5 pb-6">
-          <Link href="/" className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-on-surface-variant hover:text-on-background transition-colors">
-            <ArrowLeft size={12} /> Back to inventory
-          </Link>
-        </div>
-      </aside>
+      <Sidebar />
 
       {/* Main */}
       <main className="flex-1 flex flex-col min-h-screen">

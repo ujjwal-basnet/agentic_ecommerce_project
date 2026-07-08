@@ -322,13 +322,17 @@ def init_db():
 
 
 def _validate_schema(conn: PostgresConnection) -> None:
+    schema = conn.execute("SELECT current_schema() AS schema").fetchone()["schema"]
     rows = conn.execute(
-        "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'"
+        "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = ?",
+        (schema,),
     ).fetchall()
     tables = {row["name"] for row in rows}
     missing = sorted(_REQUIRED_TABLES - tables)
     if missing:
-        raise RuntimeError(f"Database initialization missing tables: {missing}")
+        raise RuntimeError(
+            f"Database initialization missing tables in schema {schema}: {missing}"
+        )
 
 
 def startup() -> None:

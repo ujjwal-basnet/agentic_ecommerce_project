@@ -196,6 +196,7 @@ export async function restyleCaption(
 export interface GenerateVisualOpts {
   productId: number;
   prompt: string;
+  imageModel?: string;
   modelPhoto?: File | null;
   backgroundPhoto?: File | null;
   backgroundPreset?: string | null;
@@ -205,6 +206,7 @@ export async function generateCampaignVisual(opts: GenerateVisualOpts) {
   const body = new FormData();
   body.append("product_id", String(opts.productId));
   body.append("prompt", opts.prompt);
+  body.append("image_model", opts.imageModel || "nano_banana");
   if (opts.backgroundPreset) body.append("background_preset", opts.backgroundPreset);
   if (opts.modelPhoto) body.append("model_photo", opts.modelPhoto);
   if (opts.backgroundPhoto) body.append("background_photo", opts.backgroundPhoto);
@@ -232,4 +234,13 @@ export async function launchCampaign(
     deployed: string[];
     failed: { channel: string; error: string }[];
   }>;
+}
+
+export async function generateCampaignVisualPrompt(productId: number, tone: string) {
+  const body = new FormData();
+  body.append("product_id", String(productId));
+  body.append("tone", tone);
+  const res = await gatedFetch(apiUrl("/owner/campaign/visual/prompt"), { method: "POST", body });
+  if (!res.ok) throw new Error("Failed to generate prompt");
+  return res.json() as Promise<{ prompt: string; tone: string }>;
 }

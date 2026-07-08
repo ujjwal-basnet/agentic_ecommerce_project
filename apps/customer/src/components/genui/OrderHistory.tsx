@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ShoppingBag } from "lucide-react";
 import { fetchOrders, imageUrl } from "@/lib/api";
 
 interface Order {
@@ -15,14 +15,29 @@ interface Order {
   image_path: string;
 }
 
+function StatusBadge({ status }: { status: string }) {
+  const s = status?.toLowerCase();
+  const styles: Record<string, string> = {
+    delivered: "bg-[#f0fff4] text-[#0a6629]",
+    pending: "bg-[#fff8ee] text-[#8a5100]",
+    processing: "bg-[#f5f5f7] text-[#1d1d1f]",
+    cancelled: "bg-[#fff2f0] text-[#d70015]",
+    shipped: "bg-[#f0f5ff] text-[#1d3f8e]",
+  };
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-headline font-semibold capitalize ${styles[s] || "bg-[#f5f5f7] text-[#86868b]"}`}>
+      {status}
+    </span>
+  );
+}
+
 export default function OrderHistory({ sessionId }: { sessionId: string }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-
-  const PER_PAGE = 5;
+  const PER_PAGE = 6;
 
   useEffect(() => {
     async function load() {
@@ -45,8 +60,7 @@ export default function OrderHistory({ sessionId }: { sessionId: string }) {
 
   function formatDate(dateStr: string) {
     try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
     } catch {
       return dateStr?.split(" ")[0] || "";
     }
@@ -54,142 +68,85 @@ export default function OrderHistory({ sessionId }: { sessionId: string }) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-[32px] p-10 text-center border border-[rgba(171,179,183,0.22)] shadow-[0_8px_30px_rgba(43,52,55,0.04)]">
-        <p className="font-headline text-sm text-[#6b7280]">Loading order history...</p>
+      <div className="space-y-3">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="bg-white rounded-2xl p-4 shadow-card animate-pulse">
+            <div className="flex gap-3">
+              <div className="w-12 h-12 rounded-xl bg-[#f5f5f7]" />
+              <div className="flex-grow space-y-2">
+                <div className="h-3.5 w-32 rounded bg-[#f5f5f7]" />
+                <div className="h-3 w-20 rounded bg-[#f5f5f7]" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
   if (!orders.length) {
     return (
-      <div className="bg-white rounded-[32px] p-10 text-center border border-[rgba(171,179,183,0.22)] shadow-[0_8px_30px_rgba(43,52,55,0.04)]">
-        <p className="font-headline text-sm text-[#6b7280]">No orders yet. Start shopping!</p>
+      <div className="bg-white rounded-2xl p-10 text-center shadow-card">
+        <ShoppingBag size={28} className="text-[#d1d1d6] mx-auto mb-3" />
+        <p className="font-headline font-medium text-[15px] text-[#1d1d1f] mb-1">No orders yet</p>
+        <p className="text-[13px] text-[#86868b] font-body">Your orders will show up here.</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full space-y-6">
-      {/* Header with stats */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h2 className="font-headline font-extrabold text-[clamp(1.75rem,3.5vw,2.8rem)] tracking-[-0.03em] leading-tight text-[#2b3437]">
-            Orders Archive
-          </h2>
-          <p className="text-[#586064] mt-2 max-w-md text-sm">
-            Your purchase history and order details.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <div className="bg-white border border-[rgba(171,179,183,0.22)] p-5 rounded-xl min-w-[140px] shadow-sm">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold mb-1.5">Total Orders</p>
-            <p className="font-headline font-extrabold text-2xl tracking-tight text-[#575e70]">{totalOrders}</p>
-          </div>
-          <div className="bg-white border border-[rgba(171,179,183,0.22)] p-5 rounded-xl min-w-[140px] shadow-sm">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold mb-1.5">Total Spent</p>
-            <p className="font-headline font-extrabold text-2xl tracking-tight text-[#575e70]">
-              Rs. {totalSpent >= 1000 ? `${(totalSpent / 1000).toFixed(1)}k` : totalSpent.toFixed(0)}
-            </p>
-          </div>
-        </div>
+    <div className="w-full space-y-5 fade-in">
+      <div>
+        <h2 className="font-headline font-semibold text-[22px] tracking-tight text-[#1d1d1f]">Orders</h2>
+        <p className="text-[13px] text-[#86868b] font-body mt-0.5">
+          {totalOrders} order{totalOrders !== 1 ? "s" : ""} · Rs. {totalSpent >= 1000 ? `${(totalSpent / 1000).toFixed(1)}k` : totalSpent.toFixed(0)} total
+        </p>
       </div>
 
-      {/* Orders table */}
-      <div className="bg-white rounded-xl overflow-hidden border border-[rgba(171,179,183,0.22)] shadow-sm">
-        {/* Table header (desktop) */}
-        <div className="hidden md:grid grid-cols-12 gap-4 px-8 py-5 bg-[#f1f4f6] border-b border-gray-200">
-          <div className="col-span-2 text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold">Placed On</div>
-          <div className="col-span-2 text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold">Order Ref</div>
-          <div className="col-span-4 text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold">Item Description</div>
-          <div className="col-span-2 text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold">Status</div>
-          <div className="col-span-2 text-right text-[10px] uppercase tracking-[0.2em] text-[#586064] font-bold">Amount</div>
-        </div>
-
-        {/* Rows */}
-        <div className="divide-y divide-gray-200">
-          {paginated.map((order) => (
-            <div
-              key={order.id}
-              className="grid grid-cols-1 md:grid-cols-12 gap-4 px-8 py-6 items-center hover:bg-gray-50 transition-colors duration-200"
-            >
-              {/* Date */}
-              <div className="col-span-2 text-sm text-[#2b3437]">
-                <span className="md:hidden text-[10px] uppercase tracking-[0.18em] text-[#586064] font-bold block mb-1">Placed On</span>
-                {formatDate(order.created_at)}
+      <div className="space-y-2">
+        {paginated.map((order) => (
+          <div key={order.id} className="bg-white rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-all duration-200">
+            <div className="flex gap-3">
+              <div className="w-12 h-12 bg-[#f5f5f7] rounded-xl overflow-hidden flex-shrink-0">
+                {order.image_path ? (
+                  <img src={imageUrl(order.image_path)} alt={order.product_name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"><ShoppingBag size={16} className="text-[#d1d1d6]" /></div>
+                )}
               </div>
 
-              {/* Order ref */}
-              <div className="col-span-2">
-                <span className="md:hidden text-[10px] uppercase tracking-[0.18em] text-[#586064] font-bold block mb-1">Order Ref</span>
-                <span className="font-headline font-semibold text-xs tracking-[0.15em] text-[#575e70]">
-                  #CR-{String(order.id).padStart(5, "0")}
-                </span>
-              </div>
-
-              {/* Item description */}
-              <div className="col-span-4 flex items-center gap-4">
-                <div className="w-16 h-20 bg-[#eaeff1] flex-shrink-0 overflow-hidden rounded-lg">
-                  {order.image_path ? (
-                    <img
-                      src={imageUrl(order.image_path)}
-                      alt={order.product_name}
-                      className="w-full h-full object-cover grayscale contrast-125"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#586064]/30 font-headline text-sm">S</div>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-headline font-bold text-base text-[#2b3437] truncate">{order.product_name}</p>
-                  <p className="text-xs text-[#586064]">
-                    Qty: {order.quantity} {order.category ? `• ${order.category}` : ""}
+              <div className="flex-grow min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-headline font-medium text-[13px] text-[#1d1d1f] truncate">{order.product_name}</p>
+                    <p className="text-[11px] text-[#86868b] font-label mt-0.5">
+                      Qty {order.quantity} · {formatDate(order.created_at)}
+                    </p>
+                  </div>
+                  <p className="font-headline font-semibold text-[13px] text-[#1d1d1f] flex-shrink-0">
+                    Rs. {(order.price * order.quantity).toLocaleString()}
                   </p>
                 </div>
-              </div>
-
-              {/* Status */}
-              <div className="col-span-2">
-                <span className="md:hidden text-[10px] uppercase tracking-[0.18em] text-[#586064] font-bold block mb-1">Status</span>
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] uppercase tracking-[0.12em] font-bold ${
-                  order.status === "delivered"
-                    ? "bg-[#575e70] text-white"
-                    : order.status === "pending"
-                    ? "bg-[#fef3c7] text-[#92400e]"
-                    : "bg-[#e2e9ec] text-[#586064]"
-                }`}>
-                  {order.status}
-                </span>
-              </div>
-
-              {/* Amount */}
-              <div className="col-span-2 text-right">
-                <span className="md:hidden text-[10px] uppercase tracking-[0.18em] text-[#586064] font-bold block mb-1">Amount</span>
-                <span className="font-headline font-bold text-[#2b3437]">
-                  Rs. {(order.price * order.quantity).toFixed(2)}
-                </span>
+                <div className="flex items-center justify-between mt-1.5">
+                  <span className="text-[10px] text-[#c7c7cc] font-label">#{String(order.id).padStart(5, "0")}</span>
+                  <StatusBadge status={order.status} />
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center items-center gap-4 pt-2">
-          <button
-            onClick={() => setPage(Math.max(1, page - 1))}
-            disabled={page === 1}
-            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-200 text-[#2b3437] hover:bg-[#eaeff1] transition-colors disabled:opacity-30"
-          >
-            <ChevronLeft size={16} />
+        <div className="flex justify-center items-center gap-3 pt-1">
+          <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-[#e5e5ea] text-[#1d1d1f] hover:bg-[#f5f5f7] transition-all disabled:opacity-30">
+            <ChevronLeft size={14} />
           </button>
-          <span className="text-xs font-bold tracking-[0.15em]">{page} / {totalPages}</span>
-          <button
-            onClick={() => setPage(Math.min(totalPages, page + 1))}
-            disabled={page === totalPages}
-            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-200 text-[#2b3437] hover:bg-[#eaeff1] transition-colors disabled:opacity-30"
-          >
-            <ChevronRight size={16} />
+          <span className="text-[11px] font-headline font-medium text-[#86868b]">{page} / {totalPages}</span>
+          <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-[#e5e5ea] text-[#1d1d1f] hover:bg-[#f5f5f7] transition-all disabled:opacity-30">
+            <ChevronRight size={14} />
           </button>
         </div>
       )}

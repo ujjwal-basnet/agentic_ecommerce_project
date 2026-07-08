@@ -1,0 +1,8 @@
+# Reverse proxy + automatic HTTPS for the SmartShop backend.
+#
+# Set DOMAIN (in infra/.env or the shell) to a domain pointed at this droplet's IP,
+# e.g. DOMAIN=api.yourshop.xyz — Caddy then provisions a Let's Encrypt cert
+# automatically. Unset → serves plain HTTP on :80 (no TLS; try-on camera won't work).
+{$DOMAIN::80} {
+	reverse_proxy api:8000
+}

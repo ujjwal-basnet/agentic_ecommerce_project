@@ -45,6 +45,7 @@ data/uploads/
 data/tryon/
 data/campaigns/
 data/products/
+data/memes/
 data/*.db
 data/*.db-shm
 data/*.db-wal
@@ -89,3 +90,27 @@ fix_plan.md
 
 
 .vscode
+
+# Local book analysis notes
+book_notes/
+.gstack/
+
+# Models & backups
+models/
+lightning_ai_backup/
+
+# Exclude report and proposals
+report/
+latex_proposal/
+typst_proposal/
+
+# Exclude agent, client, and scratch files
+.agents/
+.claude/
+.gemini/
+scratch/
+notebooks/
+evals/
+tests/
+
+

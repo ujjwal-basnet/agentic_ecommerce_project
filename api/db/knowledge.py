@@ -11,56 +11,57 @@ logger = logging.getLogger(__name__)
 
 _KB_SEED = [
     (
-        "Return Policy",
+        "Return & Refund Policy",
         "returns",
-        "We accept returns within 7 days of delivery. Items must be unused, in original packaging, "
-        "with tags attached. Refunds are processed within 3-5 business days after we receive the item. "
-        "Electronics and sale items are final sale and cannot be returned. To initiate a return, "
-        "go to your order history and select 'Request Return' or contact support.",
+        "We accept returns within 7 days of delivery for clothing items. Items must be unused, unworn, in original packaging, "
+        "and with tags attached. Refunds are processed within 24-48 hours directly to your eSewa, Khalti, or bank account "
+        "after our warehouse receives and inspects the item. Electronics and items bought during flash sales are final sale "
+        "and cannot be returned. Returns can be initiated from your account dashboard or by contacting customer support.",
     ),
     (
-        "Shipping Information",
+        "Shipping & Delivery Policy",
         "shipping",
-        "We ship across Nepal. Standard delivery takes 3-5 business days and costs Rs. 100 for orders "
-        "under Rs. 2000 (free above Rs. 2000). Express delivery (1-2 days) is Rs. 250. We ship via "
-        "local courier partners. You will receive a tracking update when your order is dispatched. "
-        "Cash on delivery is available for orders under Rs. 10,000.",
+        "We deliver to all major cities across Nepal. Inside Kathmandu Valley, delivery takes 24-48 hours and is free "
+        "for orders above Rs. 1500 (flat Rs. 100 for orders under Rs. 1500). Delivery outside Kathmandu Valley (e.g. Pokhara, "
+        "Butwal, Biratnagar, Chitwan) takes 3-5 business days with a flat rate of Rs. 150. COD (Cash on Delivery) is available "
+        "for orders up to Rs. 15,000 nationwide. Orders above Rs. 15,000 require a 10% advance payment via eSewa or Khalti.",
     ),
     (
-        "Size Guide",
+        "Size & Fitting Guide",
         "sizing",
-        "Our clothing follows standard South Asian sizing. Shirts: S (36), M (38), L (40), XL (42), "
-        "XXL (44). Kurtis: S (36), M (38), L (40), XL (42). Jeans: 28, 30, 32, 34, 36. "
-        "If you are between sizes, we recommend going one size up. Measurements are in inches (chest). "
-        "For exact fit, refer to the product description for specific measurements.",
+        "Our clothing follows standard Nepalese/South Asian sizes: Shirts and T-Shirts range from S (36) to XXL (44). "
+        "Womens Kurtis are available in S (36), M (38), L (40), and XL (42). Straight-fit Jeans are sized from 28 to 36 inches. "
+        "Detailed measurements are displayed on each product card. If you are in between sizes, we recommend ordering one size "
+        "up for a comfortable fit.",
     ),
     (
-        "Payment Methods",
+        "Payment & Checkout Methods",
         "payment",
-        "We accept eSewa, Khalti, bank transfer, and cash on delivery. Online payments are processed "
-        "securely. Cash on delivery is available for orders under Rs. 10,000. For eSewa/Khalti, "
-        "you will be redirected to the payment gateway during checkout.",
+        "SmartShop supports multiple payment gateways for your convenience: eSewa, Khalti, direct Bank Transfer (IPS/ConnectIPS), "
+        "and Cash on Delivery (COD). Cash on Delivery is available for all orders under Rs. 15,000. Online payments are "
+        "processed through secure SSL encryption, and you will be redirected to the respective payment app during checkout.",
     ),
     (
-        "Store Hours & Contact",
+        "Virtual Try-On Guide",
+        "tryon",
+        "Our innovative Virtual Try-On feature allows you to see how clothing looks on you before buying! Click on any wearable "
+        "garment (shirts, kurtis, jeans) and choose 'Virtual Try-On'. Upload a clear, front-facing, full-body photo of yourself "
+        "in standard lighting. Our AI model overlays the clothing in real-time. For privacy, your uploaded photos are "
+        "processed in volatile memory and permanently deleted immediately after generation.",
+    ),
+    (
+        "SmartShop Points & Rewards",
+        "rewards",
+        "Earn while you shop with our SmartShop Loyalty Program! Get 5% cashback in the form of SmartPoints for every Rs. 100 spent. "
+        "1 SmartPoint is equivalent to Rs. 1 and can be redeemed during checkout for instant discounts. Points are credited "
+        "automatically to your account once your order is successfully delivered. Points do not expire.",
+    ),
+    (
+        "Store Contact & Customer Support",
         "contact",
-        "Our online store is available 24/7. Customer support is available 10 AM - 6 PM NPT, "
-        "Sunday to Friday. Email: support@smartshop.com.np. Phone: +977-1-XXXXXXX. "
-        "Response time is typically within 24 hours.",
-    ),
-    (
-        "Warranty & Quality",
-        "warranty",
-        "Electronics carry a 1-year manufacturer warranty. Clothing and accessories are guaranteed "
-        "against manufacturing defects for 30 days. Bags carry a 6-month warranty on zippers and "
-        "stitching. Warranty does not cover normal wear and tear or misuse.",
-    ),
-    (
-        "Account & Privacy",
-        "privacy",
-        "We collect your name and email for order processing. Your data is never sold to third parties. "
-        "Chat history is stored to improve your shopping experience. You can delete your account and "
-        "all associated data by contacting support.",
+        "Our online store is open 24/7 for browsing and ordering. Live customer support is available from 10 AM to 6 PM NPT, "
+        "Sunday to Friday. You can email us at support@smartshop.com.np, call +977-1-4567890, or message us directly on our "
+        "Facebook and Instagram pages. Response times are typically under 2 hours during support hours.",
     ),
 ]
 

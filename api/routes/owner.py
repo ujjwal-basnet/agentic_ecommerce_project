@@ -183,6 +183,38 @@ async def campaign_caption_restyle(
     return {"caption": caption, "tone": tone_key, "language": lang_key}
 
 
+@router.post("/campaign/visual/prompt")
+async def campaign_visual_prompt(
+    product_id: int = Form(...),
+    tone: str = Form("aesthetic"),
+):
+    """Ask the LLM to write a high-end image generation prompt for the product."""
+    product = database.get_product_by_id(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    system = (
+        "You are an expert art director and Midjourney/Stable Diffusion prompt engineer. "
+        "Write a highly detailed, cinematic image generation prompt for the product. "
+        "Do not include quotes or intro text. Just the prompt string."
+    )
+    user = (
+        f"Product: {product.get('name', '')}\n"
+        f"Category: {product.get('category', '')}\n"
+        f"Color: {product.get('color', '')}\n"
+        f"Tone/Style: {tone}\n\n"
+        "Write a prompt that places this product in an ultra-realistic, high-end environment "
+        "matching the requested tone. Mention lighting, camera angles, textures, and background details."
+    )
+    try:
+        prompt_text = (await llm.acall_llm(system, user)).strip()
+    except Exception:
+        _log.exception("campaign_visual_prompt failed")
+        raise HTTPException(status_code=502, detail="LLM call failed")
+
+    return {"prompt": prompt_text, "tone": tone}
+
+
 _BACKGROUND_PRESETS = {
     "studio_white": "Clean seamless white studio cyclorama background with soft diffused lighting, minimal shadow underneath the subject.",
     "studio_noir": "Deep matte charcoal studio background with dramatic single-source side lighting and rich shadow detail.",
@@ -198,6 +230,7 @@ async def campaign_visual_generate(
     product_id: int = Form(...),
     prompt: str = Form(""),
     background_preset: str = Form(""),
+    image_model: str = Form("nano_banana"),
     model_photo: UploadFile | None = File(None),
     background_photo: UploadFile | None = File(None),
 ):
@@ -253,6 +286,7 @@ async def campaign_visual_generate(
             model_image_path,
             effective_prompt,
             background_image_path=background_image_path,
+            image_model=image_model,
         )
     except Exception as e:
         _log.exception("campaign_visual_generate failed")

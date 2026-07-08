@@ -1,0 +1,65 @@
+{
+  "description": "SmartShop CapabilityPlan fine-tuning dataset.",
+  "format": "OpenAI/Qwen chat JSONL with system, user and assistant messages.",
+  "main_training_file": "data/finetune_dataset.jsonl",
+  "split_files": {
+    "train": "data/finetune_train.jsonl",
+    "validation": "data/finetune_validation.jsonl",
+    "test": "data/finetune_test.jsonl"
+  },
+  "counts": {
+    "all": 1383,
+    "train": 1048,
+    "validation": 171,
+    "test": 164
+  },
+  "channels": {
+    "facebook": 272,
+    "instagram": 272,
+    "mcp": 270,
+    "web": 353
+  },
+  "outputs": {
+    "add_to_cart": 112,
+    "checkout_cart": 9,
+    "clear_cart": 5,
+    "direct_response": 133,
+    "perform_virtual_try_on": 17,
+    "remove_from_cart": 44,
+    "resolve_products": 978,
+    "search_knowledge_base": 78,
+    "view_cart": 7
+  },
+  "notes": [
+    "The assistant target is planner JSON, not the final customer-facing reply.",
+    "Web examples identify product_card_and_answer rendering in the user preamble.",
+    "MCP, Facebook and Instagram examples identify reply_message_only rendering.",
+    "No-match examples intentionally use direct_response to avoid partial product matches.",
+    "Policy examples route to search_knowledge_base and product examples route to resolve_products."
+  ],
+  "augmented_by": "/home/ujjwal/codeagent/new/agentic_ecommerce_project/scripts/augment_planner_finetune_dataset.py",
+  "augmentation_focus": [
+    "cart and checkout action balance",
+    "policy/product routing traps",
+    "reference-based cart actions",
+    "direct response balance"
+  ],
+  "catalog_generalization": {
+    "added_by": "/home/ujjwal/codeagent/new/agentic_ecommerce_project/scripts/add_catalog_generalization_examples.py",
+    "added_rows": {
+      "train": 144,
+      "validation": 36,
+      "test": 36
+    },
+    "purpose": "Teach the planner to choose product_ids from the supplied product markdown instead of memorizing the demo catalog."
+  },
+  "runtime_prompt_format": "Matches api.engine.planner_v2.create_plan(): optional Context block plus User request line.",
+  "channel_metadata_in_user_prompt": false,
+  "normalized_by": "/home/ujjwal/codeagent/new/agentic_ecommerce_project/scripts/normalize_finetune_runtime_prompt.py",
+  "normalized_rows": {
+    "data/finetune_dataset.jsonl": 1167,
+    "data/finetune_train.jsonl": 904,
+    "data/finetune_validation.jsonl": 135,
+    "data/finetune_test.jsonl": 128
+  }
+}

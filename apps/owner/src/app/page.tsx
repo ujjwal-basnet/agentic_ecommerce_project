@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
-  Package, BarChart3, Settings, Sparkles, Plus, Minus, Trash2, RefreshCw,
+  Package, BarChart3, Settings, Plus, Minus, Trash2, RefreshCw,
   TrendingUp, ChevronLeft, ChevronRight, Search, Filter, X,
 } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 import { fetchProducts, addProduct, deleteProduct, updateProduct, postToFacebook, imageUrl } from "@/lib/api";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
@@ -141,39 +142,17 @@ export default function OwnerDashboard() {
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fa]">
-      {/* ─── Sidebar ─────────────────────────────────────────────── */}
-      <aside className="w-56 bg-white border-r border-line flex-shrink-0 flex flex-col">
-        <div className="px-5 pt-6 pb-4">
-          <h2 className="font-headline font-extrabold text-lg tracking-tight text-[#2b3437]">SmartShop</h2>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-2 font-bold mt-0.5">Management</p>
-        </div>
-        <nav className="flex-1 px-3 space-y-1">
-          <SidebarItem icon={<Package size={16} />} label="Inventory" active={nav === "catalog"} onClick={() => setNav("catalog")} />
-          <Link
-            href="/analytics"
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-muted hover:bg-soft transition-colors"
-          >
-            <BarChart3 size={16} />
-            Analytics
-          </Link>
-          <Link
-            href="/workflow"
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-muted hover:bg-soft transition-colors"
-          >
-            <Sparkles size={16} />
-            Workflow
-          </Link>
-          <SidebarItem icon={<Settings size={16} />} label="Settings" active={nav === "settings"} onClick={() => setNav("settings")} />
-        </nav>
-        <div className="px-3 pb-6">
+      {/* ─── Sidebar ─────────────────────────────────────────── */}
+      <Sidebar
+        bottomCta={
           <button
             onClick={() => { setShowAdd(true); setNav("catalog"); }}
-            className="w-full flex items-center justify-center gap-2 bg-[#5b6478] text-white rounded-xl py-3 font-headline font-bold text-sm hover:bg-primary-dim transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#5B6278] to-[#7A8194] text-white rounded-xl py-3 font-headline font-bold text-[13px] hover:shadow-lg hover:shadow-[#5B6278]/20 transition-all duration-200"
           >
             <Plus size={16} /> New Entry
           </button>
-        </div>
-      </aside>
+        }
+      />
 
       {/* ─── Main Content ────────────────────────────────────────── */}
       <main className="flex-1 overflow-auto">
@@ -447,19 +426,6 @@ export default function OwnerDashboard() {
 
 /* ─── Sub-components ─────────────────────────────────────────────── */
 
-function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-        active ? "bg-[#5b6478] text-white" : "text-muted hover:bg-soft"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
 
 function Field({ name, label, type = "text", required = false }: { name: string; label: string; type?: string; required?: boolean }) {
   return (

@@ -16,15 +16,15 @@ export default function CartConfirmation({
   const total = data?.total ?? data?.cart_total_price ?? 0;
 
   return (
-    <div className={`rounded-xl px-5 py-4 flex items-start gap-3 border ${success ? "bg-surface-container-lowest border-outline-variant/10" : "bg-error-container/10 border-error/20"}`}>
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${success ? "bg-primary/10 text-primary" : "bg-error/10 text-error"}`}>
-        {success ? <Check size={14} /> : <X size={14} />}
+    <div className={`rounded-xl px-4 py-3 flex items-start gap-2.5 ${success ? "bg-[#f5f5f7]" : "bg-[#fff2f0]"}`}>
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${success ? "bg-[#e8e8ed] text-[#1d1d1f]" : "bg-[#ffe0dc] text-[#d70015]"}`}>
+        {success ? <Check size={11} /> : <X size={11} />}
       </div>
       <div>
-        <p className={`text-sm font-headline font-medium ${success ? "text-on-surface" : "text-error"}`}>{message}</p>
+        <p className={`text-[13px] font-body font-medium ${success ? "text-[#1d1d1f]" : "text-[#d70015]"}`}>{message}</p>
         {success && count > 0 && (
-          <p className="text-xs font-label text-on-surface-variant mt-1">
-            {count} item{count !== 1 ? "s" : ""} in selection · Rs. {Number(total).toFixed(2)}
+          <p className="text-[11px] text-[#86868b] mt-0.5 font-label">
+            {count} item{count !== 1 ? "s" : ""} · Rs. {Number(total).toLocaleString()}
           </p>
         )}
       </div>

@@ -11,8 +11,8 @@ from api.db.pool import get_conn
 from api.db.users import ensure_session
 from api.integrations import storage
 
-_products_cache: list[dict] | None = None
 
+_products_cache: list[dict] | None = None
 _products_cache_lock = _threading.Lock()
 
 

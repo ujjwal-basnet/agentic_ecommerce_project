@@ -7,7 +7,7 @@ function apiBase(): string {
     const { protocol, hostname, port } = window.location;
     if (port === "8000") return `${protocol}//${hostname}:8000`;
   }
-  return "http://localhost:8000";
+  return "http://127.0.0.1:8000";
 }
 
 function apiUrl(path: string): string {
@@ -70,7 +70,7 @@ export async function fetchSSE(
             const parsed = JSON.parse(raw);
             if (parsed.type === "error") sawErrorEvent = true;
             onEvent(parsed);
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -142,11 +142,17 @@ export async function fetchOrders(sessionId: string) {
   return res.json();
 }
 
-export async function tryOnProduct(productId: number, photo: File): Promise<any> {
+export async function tryOnProduct(productId: number, photo: File, model: string = "nano_banana"): Promise<any> {
   const body = new FormData();
   body.append("product_id", String(productId));
   body.append("photo", photo);
+  body.append("model", model);
   const res = await gatedFetch(apiUrl("/specialist/tryon"), { method: "POST", body });
+  return res.json();
+}
+
+export async function fetchImageModels(): Promise<{ models: { id: string; label: string; description: string; supports_edit: boolean }[] }> {
+  const res = await gatedFetch(apiUrl("/specialist/image-models"));
   return res.json();
 }
 
@@ -199,5 +205,5 @@ export function trackView(sessionId: string, productId: number, searchQuery?: st
   body.append("product_id", String(productId));
   if (searchQuery) body.append("search_query", searchQuery);
   // Fire-and-forget; never block product rendering on tracking.
-  gatedFetch(apiUrl("/api/track/view"), { method: "POST", body, keepalive: true }).catch(() => {});
+  gatedFetch(apiUrl("/api/track/view"), { method: "POST", body, keepalive: true }).catch(() => { });
 }
