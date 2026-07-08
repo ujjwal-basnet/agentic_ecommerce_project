@@ -183,7 +183,7 @@ async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
 
 _RUNFLOW_MODELS = {
     "nano_banana": "google/nano-banana-2/edit",
-    "gpt_image_2": "openai/gpt-image-2/edit",
+    "gpt_image_2": "openai/gpt-image-2",
 }
 _RUNFLOW_POLL_INTERVAL = 2.5
 _RUNFLOW_POLL_MAX_WAIT = 120
@@ -221,7 +221,6 @@ async def _runflow_generate(
     payload: dict = {
         "input": {
             "prompt": prompt,
-            "image_urls": image_urls,
             "num_images": 1,
             "output_format": "png",
         }
@@ -229,6 +228,7 @@ async def _runflow_generate(
 
     # Model-specific params
     if model_key == "nano_banana":
+        payload["input"]["image_urls"] = image_urls
         payload["input"]["safety_tolerance"] = "4"
         payload["input"]["limit_generations"] = True
     elif model_key == "gpt_image_2":
