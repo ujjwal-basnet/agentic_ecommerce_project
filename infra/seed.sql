@@ -1,6 +1,5 @@
--- SmartShop product seed (correct categories). Restored into public.products.
--- Runs via postgres docker-entrypoint-initdb.d before the backend starts,
--- so init_db()'s filename-based auto-seed is skipped (products already present).
+-- SmartShop product seed (correct categories matched to fine-tuned model IDs).
+-- Restored into public.products.
 CREATE TABLE IF NOT EXISTS products (
     id          SERIAL PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -16,24 +15,62 @@ CREATE TABLE IF NOT EXISTS products (
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (1,'Gigaware Xunfox K80 Mechanical Keyboard','general','black',999.0,'Gigaware Xunfox K80 Mechanical Keyboard',17,'data/products/Gigaware_Xunfox_K80_Mechanical_Keyboard.png','["gigaware", "xunfox", "k80", "mechanical", "keyboard"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (2,'Harry Porter Printed Red T Shirt For Men','shirt','red',1299.0,'Harry Porter Printed Red T Shirt For Men',15,'data/products/Harry_Porter_Printed_Red_T-Shirt_For_ Men .png','["harry", "porter", "printed", "red", "t", "shirt", "for", "men"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (3,'New Classic Wayfarer Non Polarized Sunglasses Unisex Black','accessories','black',599.0,'New Classic Wayfarer Non Polarized Sunglasses Unisex Black',11,'data/products/New_Classic_Wayfarer_Non-Polarized_Sunglasses-Unisex-Black.png','["new", "classic", "wayfarer", "non", "polarized", "sunglasses", "unisex", "black"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (4,'Pringles Sour Cream Onion 134 Gm','snack','green',999.0,'Pringles sour cream and onion potato chips snack, 134 gm.',20,'data/products/Pringles_Sour_Cream_Onion_134_gm.png','["pringles", "sour cream", "onion", "134 gm", "snack", "chips", "food"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (5,'Royal Blue Shirt For Men','shirt','royal',1299.0,'Royal Blue Shirt For Men',13,'data/products/Royal_Blue_Shirt_For_Men.png','["royal", "blue", "shirt", "for", "men"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (6,'Sprite Lemon & Lime Flavoured','drink','green',999.0,'Sprite lemon and lime flavoured cold drink beverage for refreshment.',12,'data/products/Sprite_Lemon_&_Lime_Flavoured.png','["sprite", "lemon", "lime", "flavoured", "drink", "beverage", "soda", "cold drink", "summer"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (7,'Acer Nitro V16 Ryzen 5 Rtx 5050 8gb 16gb Ram 512gb Ssd 180hz Gaming Laptop','laptops','black',89999.0,'Acer Nitro V16 Ryzen 5 Rtx 5050 8gb 16gb Ram 512gb Ssd 180hz Gaming Laptop',6,'data/products/acer-nitro-v16-ryzen-5-rtx-5050-8gb-16gb-ram-512gb-ssd-180hz-gaming-laptop.png','["acer", "nitro", "v16", "ryzen", "5", "rtx", "5050", "8gb", "16gb", "ram", "512gb", "ssd", "180hz", "gaming", "laptop"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (8,'Black Laptop Cover Bag For 14 Inch Display','laptops','black',49999.0,'Black Laptop Cover Bag For 14 Inch Display',20,'data/products/black_laptop_cover_bag_for_14_inch_display.png','["black", "laptop", "cover", "bag", "for", "14", "inch", "display"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (9,'Daily Use Ladies Cotton Kurti Readymade Suit','kurti','black',1499.0,'Daily Use Ladies Cotton Kurti Readymade Suit',5,'data/products/daily-use-ladies-cotton-kurti-readymade-suit.png','["daily", "use", "ladies", "cotton", "kurti", "readymade", "suit"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (10,'Dell Latitude 5300 13 3 Inch I5 8365u 8gb Ram 256gb Ssd Laptop','laptops','black',45999.0,'Dell Latitude 5300 13 3 Inch I5 8365u 8gb Ram 256gb Ssd Laptop',20,'data/products/dell-latitude-5300-13-3-inch-i5-8365u-8gb-ram-256gb-ssd-laptop.jpg.png','["dell", "latitude", "5300", "13", "3", "inch", "i5", "8365u", "8gb", "ram", "256gb", "ssd", "laptop"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (11,'Lenovo Loq Gaming Laptop I5 12450hx Rtx 4050 6gb 16gb Ram 512gb Ssd 144hz','laptops','black',69999.0,'Lenovo Loq Gaming Laptop I5 12450hx Rtx 4050 6gb 16gb Ram 512gb Ssd 144hz',14,'data/products/lenovo-loq-gaming-laptop-i5-12450hx-rtx-4050-6gb-16gb-ram-512gb-ssd-144hz.png','["lenovo", "loq", "gaming", "laptop", "i5", "12450hx", "rtx", "4050", "6gb", "16gb", "ram", "512gb", "ssd", "144hz"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (12,'Light Blue Jeans Men Straight Fit Plain','jeans','blue',1799.0,'Light Blue Jeans Men Straight Fit Plain',12,'data/products/light-blue-jeans-men-straight-fit-plain.png','["light", "blue", "jeans", "men", "straight", "fit", "plain"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (13,'Skytech V380 2mp Wifi Cctv Camera Motion Tracking Two Way Audio Night Vision','electronics','black',2499.0,'Skytech V380 2mp Wifi Cctv Camera Motion Tracking Two Way Audio Night Vision',15,'data/products/skytech-v380-2mp-wifi-cctv-camera-motion-tracking-two-way-audio-night-vision.png','["skytech", "v380", "2mp", "wifi", "cctv", "camera", "motion", "tracking", "two", "way", "audio", "night", "vision"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (14,'Ultima Soundbox S20 30w Bluetooth Speaker 7h Playtime Rgb Tws Ipx5','electronics','black',3499.0,'Ultima Soundbox S20 30w Bluetooth Speaker 7h Playtime Rgb Tws Ipx5',7,'data/products/ultima-soundbox-s20-30w-bluetooth-speaker-7h-playtime-rgb-tws-ipx5.png','["ultima", "soundbox", "s20", "30w", "bluetooth", "speaker", "7h", "playtime", "rgb", "tws", "ipx5"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (15,'Ultima Thunder Speaker 110w Rms 220w Peak Bluetooth 5 3 Extra Bass Rgb Led','electronics','black',7999.0,'Ultima Thunder Speaker 110w Rms 220w Peak Bluetooth 5 3 Extra Bass Rgb Led',17,'data/products/ultima-thunder-speaker-110w-rms-220w-peak-bluetooth-5-3-extra-bass-rgb-led.png','["ultima", "thunder", "speaker", "110w", "rms", "220w", "peak", "bluetooth", "5", "3", "extra", "bass", "rgb", "led"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (16,'Womens Formal Shirt Long Sleeve Slim Fit Office Top','shirt','black',1299.0,'Womens Formal Shirt Long Sleeve Slim Fit Office Top',8,'data/products/womens-formal-shirt-long-sleeve-slim-fit-office-top.png','["womens", "formal", "shirt", "long", "sleeve", "slim", "fit", "office", "top"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (17,'25W USB-C Power Adapter With Lightning Cable White','electronics','white',1299.0,'White 25W USB-C power adapter bundled with a 1 meter USB-C to Lightning cable, suitable for compatible iPhone models including 14 Pro Max and 11 Pro Max.',10,'data/products/25w-usb-c-power-adapter-with-lightning-cable-white.png','["25w", "usb-c", "power adapter", "charger", "lightning cable", "1m cable", "iphone", "14 pro max", "11 pro max", "white", "electronics", "accessory"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (18,'Winter Polar Fleece Warm Jacket For Men','jacket','cream, black',1799.0,'Men''s winter polar fleece jacket in a cream body with black shoulder panels, full front zipper, high collar, side pockets, and elastic cuffs for warm casual winter wear.',10,'data/products/winter-polar-fleece-warm-jacket-for-men-cream-black.png','["winter", "polar fleece", "warm jacket", "men", "mens winter dress", "outerwear", "cream", "black", "wearable", "clothing"]',1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (19,'20 Kg Adjustable Dumbbell With Barbell Connector Set','fitness','black, red',3158.0,'20 kg adjustable home gym dumbbell set in black and red with multiple PVC weight plates, spin-lock collars, textured dumbbell handles, and a 40 cm connector rod for converting the pair into a barbell for strength training.',10,'data/products/20kg-adjustable-dumbbell-barbell-connector-set-home-gym.png','["20kg", "20 kg", "adjustable dumbbell", "dumbbells", "barbell connector", "home gym", "fitness", "exercise", "workout", "weight plates", "spin locks", "strength training", "black", "red", "equipment"]',0) ON CONFLICT (id) DO NOTHING;
-INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES (20,'Portable Handheld Rechargeable Fan With LED Display','electronics','green, black',340.0,'Compact forest-green handheld rechargeable fan with a smart LED battery and speed display, 90-degree adjustable fan head, 4000mAh battery, five wind speeds, USB/Type-C charging, tabletop stand support, and aromatherapy pad for office, room, outdoor, and travel use.',10,'data/products/portable-handheld-rechargeable-fan-led-display-green.png','["portable fan", "handheld fan", "personal fan", "rechargeable fan", "mini fan", "led display", "90 degree adjustable", "4000mah", "5 speed", "aromatherapy fan", "office", "room", "table", "outdoor", "travel", "phone stand", "usb", "type-c", "green", "black", "electronics"]',0) ON CONFLICT (id) DO NOTHING;
+
+-- Clean up any existing rows to prevent ID conflicts
+TRUNCATE TABLE products CASCADE;
+
+-- Insert products with exact training IDs
+INSERT INTO products (id,name,category,color,price,description,quantity,image_path,tags,is_wearable) VALUES 
+(1,'20 Kg Adjustable Dumbbell With Barbell Connector Set','fitness','black, red',3158.0,'20 kg adjustable home gym dumbbell set in black and red with PVC weight plates, spin-lock collars, textured dumbbell handles, and a 40 cm connector rod.',10,'data/products/20kg-adjustable-dumbbell-barbell-connector-set-home-gym.png','["20kg", "20 kg", "adjustable dumbbell", "dumbbells", "barbell connector", "home gym", "fitness", "exercise", "workout", "weight plates", "spin locks", "strength training", "black", "red", "equipment"]',0),
+
+(2,'25W USB-C Power Adapter With Lightning Cable White','electronics','white',1299.0,'White 25W USB-C power adapter bundled with a 1 meter USB-C to Lightning cable.',10,'data/products/25w-usb-c-power-adapter-with-lightning-cable-white.png','["25w", "usb-c", "power adapter", "charger", "lightning cable", "1m cable", "iphone", "14 pro max", "11 pro max", "white", "electronics", "accessory"]',0),
+
+(3,'Gigaware Xunfox K80 Mechanical Keyboard','general','black',999.0,'Gigaware Xunfox K80 Mechanical Keyboard',17,'data/products/Gigaware_Xunfox_K80_Mechanical_Keyboard.png','["gigaware", "xunfox", "k80", "mechanical", "keyboard"]',0),
+
+(4,'Harry Porter Printed Red T Shirt For Men','shirt','red',1299.0,'Harry Porter Printed Red T Shirt For Men',15,'data/products/Harry_Porter_Printed_Red_T-Shirt_For_ Men .png','["harry", "porter", "printed", "red", "t", "shirt", "for", "men"]',1),
+
+(5,'New Classic Wayfarer Non Polarized Sunglasses Unisex Black','accessories','black',599.0,'New Classic Wayfarer Non Polarized Sunglasses Unisex Black',11,'data/products/New_Classic_Wayfarer_Non-Polarized_Sunglasses-Unisex-Black.png','["new", "classic", "wayfarer", "non", "polarized", "sunglasses", "unisex", "black"]',0),
+
+(6,'Pringles Sour Cream Onion 134 Gm','snack','green',999.0,'Pringles sour cream and onion potato chips snack, 134 gm.',20,'data/products/Pringles_Sour_Cream_Onion_134_gm.png','["pringles", "sour cream", "onion", "134 gm", "snack", "chips", "food"]',0),
+
+(7,'Royal Blue Shirt For Men','shirt','royal',1299.0,'Royal Blue Shirt For Men',13,'data/products/Royal_Blue_Shirt_For_Men.png','["royal", "blue", "shirt", "for", "men"]',1),
+
+(8,'Sprite Lemon & Lime Flavoured','drink','green',999.0,'Sprite lemon and lime flavoured cold drink beverage for refreshment.',12,'data/products/Sprite_Lemon_&_Lime_Flavoured.png','["sprite", "lemon", "lime", "flavoured", "drink", "beverage", "soda", "cold drink", "summer"]',0),
+
+(9,'Acer Nitro V16 Ryzen 5 Rtx 5050 8gb 16gb Ram 512gb Ssd 180hz Gaming Laptop','laptops','black',89999.0,'Acer Nitro V16 Ryzen 5 Rtx 5050 8gb 16gb Ram 512gb Ssd 180hz Gaming Laptop',6,'data/products/acer-nitro-v16-ryzen-5-rtx-5050-8gb-16gb-ram-512gb-ssd-180hz-gaming-laptop.png','["acer", "nitro", "v16", "ryzen", "5", "rtx", "5050", "8gb", "16gb", "ram", "512gb", "ssd", "180hz", "gaming", "laptop"]',0),
+
+(10,'Black Laptop Cover Bag For 14 Inch Display','laptops','black',49999.0,'Black Laptop Cover Bag For 14 Inch Display',20,'data/products/black_laptop_cover_bag_for_14_inch_display.png','["black", "laptop", "cover", "bag", "for", "14", "inch", "display"]',0),
+
+(11,'Daily Use Ladies Cotton Kurti Readymade Suit','kurti','black',1499.0,'Daily Use Ladies Cotton Kurti Readymade Suit',5,'data/products/daily-use-ladies-cotton-kurti-readymade-suit.png','["daily", "use", "ladies", "cotton", "kurti", "readymade", "suit"]',1),
+
+(12,'Dell Latitude 5300 13 3 Inch I5 8365u 8gb Ram 256gb Ssd Laptop','laptops','black',45999.0,'Dell Latitude 5300 13 3 Inch I5 8365u 8gb Ram 256gb Ssd Laptop',20,'data/products/dell-latitude-5300-13-3-inch-i5-8365u-8gb-ram-256gb-ssd-laptop.jpg.png','["dell", "latitude", "5300", "13", "3", "inch", "i5", "8365u", "8gb", "ram", "256gb", "ssd", "laptop"]',0),
+
+(13,'Lenovo Loq Gaming Laptop I5 12450hx Rtx 4050 6gb 16gb Ram 512gb Ssd 144hz','laptops','black',69999.0,'Lenovo Loq Gaming Laptop I5 12450hx Rtx 4050 6gb 16gb Ram 512gb Ssd 144hz',14,'data/products/lenovo-loq-gaming-laptop-i5-12450hx-rtx-4050-6gb-16gb-ram-512gb-ssd-144hz.png','["lenovo", "loq", "gaming", "laptop", "i5", "12450hx", "rtx", "4050", "6gb", "16gb", "ram", "512gb", "ssd", "144hz"]',0),
+
+(14,'Light Blue Jeans Men Straight Fit Plain','jeans','blue',1799.0,'Light Blue Jeans Men Straight Fit Plain',12,'data/products/light-blue-jeans-men-straight-fit-plain.png','["light", "blue", "jeans", "men", "straight", "fit", "plain"]',1),
+
+(15,'Portable Handheld Rechargeable Fan With LED Display','electronics','green, black',340.0,'Compact forest-green handheld rechargeable fan with LED display.',10,'data/products/portable-handheld-rechargeable-fan-led-display-green.png','["portable fan", "handheld fan", "personal fan", "rechargeable fan", "mini fan", "led display", "90 degree adjustable", "4000mah", "5 speed", "aromatherapy fan", "office", "room", "table", "outdoor", "travel", "phone stand", "usb", "type-c", "green", "black", "electronics"]',0),
+
+(16,'Skytech V380 2mp Wifi Cctv Camera Motion Tracking Two Way Audio Night Vision','electronics','black',2499.0,'Skytech V380 2mp Wifi Cctv Camera Motion Tracking Two Way Audio Night Vision',15,'data/products/skytech-v380-2mp-wifi-cctv-camera-motion-tracking-two-way-audio-night-vision.png','["skytech", "v380", "2mp", "wifi", "cctv", "camera", "motion", "tracking", "two", "way", "audio", "night", "vision"]',0),
+
+(17,'Ultima Soundbox S20 30w Bluetooth Speaker 7h Playtime Rgb Tws Ipx5','electronics','black',3499.0,'Ultima Soundbox S20 30w Bluetooth Speaker 7h Playtime Rgb Tws Ipx5',7,'data/products/ultima-soundbox-s20-30w-bluetooth-speaker-7h-playtime-rgb-tws-ipx5.png','["ultima", "soundbox", "s20", "30w", "bluetooth", "speaker", "7h", "playtime", "rgb", "tws", "ipx5"]',0),
+
+(18,'Ultima Thunder Speaker 110w Rms 220w Peak Bluetooth 5 3 Extra Bass Rgb Led','electronics','black',7999.0,'Ultima Thunder Speaker 110w Rms 220w Peak Bluetooth 5 3 Extra Bass Rgb Led',17,'data/products/ultima-thunder-speaker-110w-rms-220w-peak-bluetooth-5-3-extra-bass-rgb-led.png','["ultima", "thunder", "speaker", "110w", "rms", "220w", "peak", "bluetooth", "5", "3", "extra", "bass", "rgb", "led"]',0),
+
+(19,'Winter Polar Fleece Warm Jacket For Men','jacket','cream, black',1799.0,'Men''s winter polar fleece jacket in a cream body with black shoulder panels.',10,'data/products/winter-polar-fleece-warm-jacket-for-men-cream-black.png','["winter", "polar fleece", "warm jacket", "men", "mens winter dress", "outerwear", "cream", "black", "wearable", "clothing"]',1),
+
+(20,'Womens Formal Shirt Long Sleeve Slim Fit Office Top','shirt','black',1299.0,'Womens Formal Shirt Long Sleeve Slim Fit Office Top',8,'data/products/womens-formal-shirt-long-sleeve-slim-fit-office-top.png','["womens", "formal", "shirt", "long", "sleeve", "slim", "fit", "office", "top"]',1)
+
+ON CONFLICT (id) DO UPDATE SET 
+  name = EXCLUDED.name,
+  category = EXCLUDED.category,
+  color = EXCLUDED.color,
+  price = EXCLUDED.price,
+  description = EXCLUDED.description,
+  quantity = EXCLUDED.quantity,
+  image_path = EXCLUDED.image_path,
+  tags = EXCLUDED.tags,
+  is_wearable = EXCLUDED.is_wearable;
+
+-- Set sequence value to max ID
 SELECT setval(pg_get_serial_sequence('products','id'), (SELECT MAX(id) FROM products));
