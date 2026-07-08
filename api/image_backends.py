@@ -131,7 +131,25 @@ def _image_to_data_url(img_bytes: bytes, mime: str) -> str:
 
 
 async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
-    """Upload image to Supabase for public URL access, or fallback to tmpfiles.org."""
+    """Upload image to a public URL so external APIs (like Runflow/RunPod) can access it."""
+    # Try catbox.moe first as it guarantees a publicly accessible direct download link
+    try:
+        ext = "png" if "png" in mime else "jpg"
+        fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
+        async with httpx.AsyncClient(timeout=30) as client:
+            files = {"fileToUpload": (fname, img_bytes, mime)}
+            data = {"reqtype": "fileupload"}
+            resp = await client.post("https://catbox.moe/user/api.php", files=files, data=data)
+            if resp.status_code == 200:
+                raw_url = resp.text.strip()
+                if raw_url.startswith("https://"):
+                    logger.info("uploaded temp image to catbox.moe: %s", raw_url)
+                    return raw_url
+            logger.warning("catbox.moe upload failed, falling back to Supabase: %s", resp.text)
+    except Exception as e:
+        logger.warning("catbox.moe upload error, falling back to Supabase: %s", e)
+
+    # Fallback to Supabase
     if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
         try:
             ext = "png" if "png" in mime else "jpg"
@@ -150,30 +168,12 @@ async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
                 )
                 if resp.status_code in (200, 201):
                     public_url = f"{config.SUPABASE_URL}/storage/v1/object/public/{bucket}/{fname}"
-                    logger.info("uploaded temp image to Supabase: %s (%d bytes)", public_url, len(img_bytes))
+                    logger.info("uploaded temp image to Supabase fallback: %s (%d bytes)", public_url, len(img_bytes))
                     return public_url
-                else:
-                    logger.warning("Supabase upload failed, trying tmpfiles.org fallback. Status: %s", resp.status_code)
         except Exception as e:
-            logger.warning("Supabase upload error, trying tmpfiles.org fallback: %s", e)
+            logger.error("Supabase upload fallback failed: %s", e)
 
-    # Fallback to catbox.moe
-    try:
-        ext = "png" if "png" in mime else "jpg"
-        fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
-        async with httpx.AsyncClient(timeout=30) as client:
-            files = {"fileToUpload": (fname, img_bytes, mime)}
-            data = {"reqtype": "fileupload"}
-            resp = await client.post("https://catbox.moe/user/api.php", files=files, data=data)
-            if resp.status_code == 200:
-                raw_url = resp.text.strip()
-                if raw_url.startswith("https://"):
-                    logger.info("uploaded temp image to catbox.moe: %s", raw_url)
-                    return raw_url
-            raise RuntimeError(f"catbox.moe upload failed: {resp.text}")
-    except Exception as e:
-        logger.exception("Failed to upload temp image to any backend")
-        raise RuntimeError(f"All temporary image upload backends failed. Detail: {e}")
+    raise RuntimeError("All temporary image upload backends failed.")
 
 
 
