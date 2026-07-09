@@ -82,6 +82,8 @@ export default function Home() {
         setIsListening(false);
         if (event.error === "not-allowed") {
           alert("Microphone permission was denied. Please allow microphone access in your browser settings to use voice input.");
+        } else {
+          alert(`Speech recognition error: ${event.error}. Please ensure your microphone is plugged in and active.`);
         }
       };
       recognitionRef.current.onend = () => setIsListening(false);
@@ -99,8 +101,9 @@ export default function Home() {
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (e) {
+      } catch (e: any) {
         console.error("Speech recognition failed to start", e);
+        alert(`Failed to start speech recognition: ${e.message || e}`);
       }
     }
   };
