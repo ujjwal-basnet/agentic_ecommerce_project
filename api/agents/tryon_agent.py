@@ -52,10 +52,23 @@ async def tryon_impl(params: dict) -> dict:
     product_color = product.get("color", "")
     product_category = product.get("category", "")
 
-    # FLUX Kontext works best with explicit edit instructions
+    # Upload the product image as an extra reference so the model sees the actual garment
+    from api.image_backends import _upload_to_temp_url, _resolve_image_path
+    extra_image_urls = []
+    product_image_path = product.get("image_path")
+    if product_image_path:
+        try:
+            img_bytes, mime = await _resolve_image_path(product_image_path)
+            product_url = await _upload_to_temp_url(img_bytes, mime)
+            extra_image_urls.append(product_url)
+            logger.info("Uploaded product image for try-on reference: %s", product_url)
+        except Exception as e:
+            logger.warning("Failed to upload product image for try-on reference: %s", e)
+
+    # Guide the model to combine the person (first image) and the garment (second image)
     prompt = (
-        f"Keep the exact same person, same pose, same face, same background. "
-        f"Change their clothing to: {product_name}. "
+        f"Keep the exact same person, same pose, same face, same background from the first image. "
+        f"Change their clothing to look exactly like the garment shown in the second image ({product_name}). "
         f"The garment is {product_color} colored, category: {product_category}. "
         f"Make the clothing fit naturally on the person's body. "
         f"Photorealistic result, natural lighting, no artifacts."
@@ -67,6 +80,7 @@ async def tryon_impl(params: dict) -> dict:
             reference_image_path=user_image_path,
             model=model,
             is_tryon=True,
+            extra_image_urls=extra_image_urls or None,
         )
         return {
             "success": True,
