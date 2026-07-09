@@ -16,6 +16,12 @@ from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+# Monkeypatch MCP's DNS rebinding protection middleware to disable it on public VPS
+from mcp.server.transport_security import TransportSecurityMiddleware
+async def dummy_validate_request(self, request, is_post=False):
+    return None
+TransportSecurityMiddleware.validate_request = dummy_validate_request
+
 from api import config, engine
 
 mcp = FastMCP("SmartShop Assistant")
@@ -63,5 +69,6 @@ async def chat(message: str, session_id: str | None = None) -> dict:
 
 mcp_app = mcp.http_app(
     path="/",
+    host_origin_protection=False,
     middleware=[Middleware(MCPBearerAuthMiddleware)],
 )

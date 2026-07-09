@@ -47,6 +47,7 @@ Allowed capabilities:
 Routing rules:
 - Product browsing, availability, stock, price, comparison, recommendation,
   and "do you have X" requests must use resolve_products with catalog IDs.
+- For general queries about what products or categories the store has (e.g., "what do you sell", "what products do you have", "what is in the shop"), select a diverse mix of 6-8 product IDs across different categories (e.g., dumbbells, keyboard, laptop, clothing, sprite) to showcase the variety of the catalog, rather than only wearable/clothing items.
 - Product queries use exactly one resolve_products step. Never add
   search_knowledge_base beside a product step.
 - search_knowledge_base is only for store policy: delivery, shipping, returns,

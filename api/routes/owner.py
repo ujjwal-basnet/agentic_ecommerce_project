@@ -194,17 +194,20 @@ async def campaign_visual_prompt(
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
 
     system = (
-        "You are an expert art director and Midjourney/Stable Diffusion prompt engineer. "
-        "Write a highly detailed, cinematic image generation prompt for the product. "
-        "Do not include quotes or intro text. Just the prompt string."
+        "You are an expert art director and image generation prompt designer. "
+        "Write a highly detailed, cinematic image generation prompt for the product in plain natural English. "
+        "CRITICAL: Do NOT include any Midjourney/Stable Diffusion parameter flags, command options, "
+        "or tags (such as '--v', '--ar', '--style', '--chaos', '--stylize', '--s'). "
+        "Do not include quotes or intro text. Just the descriptive prompt string."
     )
     user = (
         f"Product: {product.get('name', '')}\n"
         f"Category: {product.get('category', '')}\n"
         f"Color: {product.get('color', '')}\n"
         f"Tone/Style: {tone}\n\n"
-        "Write a prompt that places this product in an ultra-realistic, high-end environment "
-        "matching the requested tone. Mention lighting, camera angles, textures, and background details."
+        "Write a highly descriptive prompt that places this product in an ultra-realistic, high-end environment "
+        "matching the requested tone. Mention lighting, camera angles, textures, and background details. "
+        "Do NOT write command-line arguments or parameter tags."
     )
     try:
         prompt_text = (await llm.acall_llm(system, user)).strip()
@@ -212,7 +215,19 @@ async def campaign_visual_prompt(
         _log.exception("campaign_visual_prompt failed")
         raise HTTPException(status_code=502, detail="LLM call failed")
 
-    return {"prompt": prompt_text, "tone": tone}
+    # Programmatic cleanup: remove any Midjourney parameters and clean up extra whitespace
+    import re
+    # Remove --ar, --v, --chaos, --stylize, --s, --style and their arguments
+    clean_prompt = re.sub(r'--(?:ar|v|chaos|chaus|stylize|style|s)(?:\s+[a-zA-Z0-9.:/-]+)?', '', prompt_text, flags=re.IGNORECASE)
+    # Remove any stray double dashes and clean spacing
+    clean_prompt = re.sub(r'--+', '', clean_prompt)
+    clean_prompt = re.sub(r'\s+', ' ', clean_prompt).strip()
+
+    # If cleanup left it empty, use a high-end fallback
+    if not clean_prompt:
+        clean_prompt = f"A high-end editorial lifestyle product shot of a {product.get('color', '')} {product.get('name', '')}, studio lighting, minimalist background."
+
+    return {"prompt": clean_prompt, "tone": tone}
 
 
 _BACKGROUND_PRESETS = {

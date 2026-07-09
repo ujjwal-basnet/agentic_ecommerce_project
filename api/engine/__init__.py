@@ -27,7 +27,6 @@ from api.engine.binder import BindingError, bind_plan
 from api.engine.executor_v2 import PipelineExecutor
 from api.engine.planner_v2 import create_plan
 from api.engine.response import generate_response_text
-from api.engine.rewriter import rewrite_query
 from api.engine.schemas import CapabilityPlan, CapabilityStep, ResolvedPlan, StepStatus
 from api.guardrails import filter_model_output, sanitize_user_input
 
@@ -343,9 +342,10 @@ _CATEGORY_LABELS: dict[str, set[str]] = {
     "laptop": {"laptops"}, "notebook": {"laptops"},
     "sunglasses": {"accessories"}, "glasses": {"accessories"},
     "keyboard": {"general"},
-    "drink": {"drink"}, "beverage": {"drink"}, "soda": {"drink"},
+    "drink": {"drink", "general"}, "beverage": {"drink", "general"}, "soda": {"drink", "general"},
     "snack": {"snack"}, "chips": {"snack"},
     "dumbbell": {"fitness"}, "barbell": {"fitness"},
+    "food": {"snack", "drink"}, "hungry": {"snack", "drink"}, "eat": {"snack"}, "thirsty": {"drink"},
     # "electronics" is a coarse label shared by several items — disambiguate by name.
     "speaker": {"electronics"}, "camera": {"electronics"}, "cctv": {"electronics"},
     "charger": {"electronics"}, "adapter": {"electronics"}, "fan": {"electronics"},
@@ -359,6 +359,13 @@ _CATEGORY_NAME_HINTS: dict[str, set[str]] = {
     "charger": {"charger", "adapter", "power adapter", "usb-c", "cable"},
     "adapter": {"charger", "adapter", "power adapter"},
     "fan": {"fan"},
+    "drink": {"sprite", "cola", "coke", "soda", "drink", "beverage", "juice", "water", "lemon", "lime"},
+    "beverage": {"sprite", "cola", "coke", "soda", "drink", "beverage", "juice", "water", "lemon", "lime"},
+    "soda": {"sprite", "cola", "coke", "soda"},
+    "food": {"pringles", "chips", "sprite", "lemon", "lime", "drink", "beverage", "soda", "snack"},
+    "hungry": {"pringles", "chips", "sprite", "lemon", "lime", "drink", "beverage", "soda", "snack"},
+    "eat": {"pringles", "chips", "snack"},
+    "thirsty": {"sprite", "cola", "coke", "soda", "drink", "beverage", "juice", "water", "lemon", "lime"},
 }
 _CATEGORY_KEYS = list(_CATEGORY_LABELS.keys())
 _CATEGORY_FUZZY_KEYS = [k for k in _CATEGORY_KEYS if len(k) >= 5]
@@ -665,23 +672,6 @@ def _get_history_context(session_id: str, limit: int = 6) -> str:
         lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
-
-def _get_history_lines(session_id: str, limit: int = 6) -> list[str]:
-    """Raw history lines for rewriter."""
-    rows = database.load_history(session_id, limit=limit)
-    if not rows:
-        return []
-    lines = []
-    for msg in rows:
-        role = "User" if msg.get("role") == "user" else "Assistant"
-        content = (msg.get("content") or "").strip()
-        if not content:
-            continue
-        max_len = 150 if role == "User" else 100
-        if len(content) > max_len:
-            content = content[:max_len].rsplit(" ", 1)[0] + "…"
-        lines.append(f"{role}: {content}")
-    return lines
 
 
 def _save_messages_async(

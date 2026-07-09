@@ -132,10 +132,28 @@ def _image_to_data_url(img_bytes: bytes, mime: str) -> str:
 
 async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
     """Upload image to a public URL so external APIs (like Runflow/RunPod) can access it."""
-    # Try catbox.moe first as it guarantees a publicly accessible direct download link
+    ext = "png" if "png" in mime else "jpg"
+    fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
+
+    # ── 1. Local self-hosted serving (highly reliable on Droplet) ────────────
+    # Save the file to the local user-uploads directory which FastAPI serves statically
     try:
-        ext = "png" if "png" in mime else "jpg"
-        fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
+        dest_path = Path(config.USER_UPLOADS_DIR) / fname
+        dest_path.write_bytes(img_bytes)
+        
+        # Build base URL. Fallback to DuckDNS domain if PUBLIC_BASE_URL is not set or is localhost
+        base_url = config.PUBLIC_BASE_URL.strip("/") if config.PUBLIC_BASE_URL else ""
+        if not base_url or "localhost" in base_url or "127.0.0.1" in base_url:
+            base_url = "https://shart-shop-ai212.duckdns.org"
+            
+        public_url = f"{base_url}/data/uploads/{fname}"
+        logger.info("Saved temp image locally for self-hosted serving: %s (%d bytes)", public_url, len(img_bytes))
+        return public_url
+    except Exception as e:
+        logger.warning("Local self-hosted temp image save failed: %s", e)
+
+    # ── 2. catbox.moe fallback (blocked on some datacenter IPs, but works locally) ──
+    try:
         async with httpx.AsyncClient(timeout=30) as client:
             files = {"fileToUpload": (fname, img_bytes, mime)}
             data = {"reqtype": "fileupload"}
@@ -143,37 +161,16 @@ async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
             if resp.status_code == 200:
                 raw_url = resp.text.strip()
                 if raw_url.startswith("https://"):
-                    logger.info("uploaded temp image to catbox.moe: %s", raw_url)
+                    logger.info("uploaded temp image to catbox.moe fallback: %s", raw_url)
                     return raw_url
-            logger.warning("catbox.moe upload failed, falling back to Supabase: %s", resp.text)
+            logger.warning("catbox.moe upload failed (%d): %s", resp.status_code, resp.text[:200])
     except Exception as e:
-        logger.warning("catbox.moe upload error, falling back to Supabase: %s", e)
+        logger.warning("catbox.moe upload error: %s", e)
 
-    # Fallback to Supabase
-    if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
-        try:
-            ext = "png" if "png" in mime else "jpg"
-            fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
-            bucket = "user-uploads"
-
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{config.SUPABASE_URL}/storage/v1/object/{bucket}/{fname}",
-                    headers={
-                        "Authorization": f"Bearer {config.SUPABASE_SERVICE_KEY}",
-                        "Content-Type": mime,
-                        "x-upsert": "true",
-                    },
-                    content=img_bytes,
-                )
-                if resp.status_code in (200, 201):
-                    public_url = f"{config.SUPABASE_URL}/storage/v1/object/public/{bucket}/{fname}"
-                    logger.info("uploaded temp image to Supabase fallback: %s (%d bytes)", public_url, len(img_bytes))
-                    return public_url
-        except Exception as e:
-            logger.error("Supabase upload fallback failed: %s", e)
-
-    raise RuntimeError("All temporary image upload backends failed.")
+    raise RuntimeError(
+        "All temporary image upload backends failed. "
+        "Check directory permissions for user-uploads or external internet connection."
+    )
 
 
 
@@ -184,7 +181,7 @@ _RUNFLOW_MODELS = {
     "gpt_image_2": "openai/gpt-image-2",
 }
 _RUNFLOW_POLL_INTERVAL = 2.5
-_RUNFLOW_POLL_MAX_WAIT = 120
+_RUNFLOW_POLL_MAX_WAIT = 360
 
 
 async def _runflow_generate(

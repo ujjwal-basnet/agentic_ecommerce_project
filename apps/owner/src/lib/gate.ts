@@ -35,14 +35,7 @@ export async function gateLogin(username: string, password: string): Promise<str
 }
 
 export async function isGateEnabled(): Promise<boolean> {
-  const API = apiBase();
-  try {
-    const res = await fetch(`${API}/api/gate/check`);
-    const data = await res.json();
-    return data.enabled === true;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 export function authHeaders(): Record<string, string> {
