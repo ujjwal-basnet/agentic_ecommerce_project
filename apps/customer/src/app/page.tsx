@@ -68,13 +68,23 @@ export default function Home() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = "en-US";
       
       recognitionRef.current.onresult = (e: any) => {
-        const transcript = e.results[0][0].transcript;
-        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        let finalTranscript = "";
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            finalTranscript += e.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setInput((prev) => {
+            const clean = finalTranscript.trim();
+            return prev ? `${prev.trim()} ${clean}` : clean;
+          });
+        }
       };
       
       recognitionRef.current.onerror = (event: any) => {
