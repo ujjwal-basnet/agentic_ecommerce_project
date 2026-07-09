@@ -286,6 +286,16 @@ async def campaign_visual_generate(
         )
 
     effective_prompt = prompt or ""
+    product_name = product.get("name", "")
+    if product_name:
+        import re
+        # Case-insensitive replacement of generic "product" with actual product name
+        if re.search(r'\bproduct\b', effective_prompt, re.IGNORECASE):
+            effective_prompt = re.sub(r'\bproduct\b', product_name, effective_prompt, flags=re.IGNORECASE)
+        # If the product name is not mentioned at all, prepend it for text-to-image guidance
+        elif product_name.lower() not in effective_prompt.lower():
+            effective_prompt = f"Product: {product_name}. {effective_prompt}"
+
     preset_key = (background_preset or "").strip().lower()
     if (
         preset_key
