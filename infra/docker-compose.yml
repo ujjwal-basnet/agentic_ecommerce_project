@@ -45,11 +45,7 @@ services:
       - "443:443"
     env_file:
       - ../.env
-    environment:
-      # Set DOMAIN=api.yourdomain.xyz (pointed at this droplet's IP) for auto-HTTPS.
-      # Left unset → Caddy serves plain HTTP on :80 (fine for a quick check, but the
-      # virtual try-on camera needs HTTPS, so use a real domain for the showcase).
-      DOMAIN: ${DOMAIN:-:80}
+
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
