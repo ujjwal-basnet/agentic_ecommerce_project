@@ -135,14 +135,32 @@ async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
     ext = "png" if "png" in mime else "jpg"
     fname = f"temp_tryon_{uuid.uuid4().hex[:8]}.{ext}"
 
-    # ── 1. Local self-hosted serving (highly reliable on Droplet) ────────────
-    # Save the file to the local user-uploads directory which FastAPI serves statically
+    # Determine if we should prioritize catbox.moe (useful when running locally behind NAT/firewall)
+    base_url = config.PUBLIC_BASE_URL.strip("/") if config.PUBLIC_BASE_URL else ""
+    is_local = not base_url or "localhost" in base_url or "127.0.0.1" in base_url or "duckdns.org" in base_url
+
+    # ── 1. catbox.moe (try first if running locally so external APIs can reach the image) ──
+    if is_local:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                files = {"fileToUpload": (fname, img_bytes, mime)}
+                data = {"reqtype": "fileupload"}
+                resp = await client.post("https://catbox.moe/user/api.php", files=files, data=data)
+                if resp.status_code == 200:
+                    raw_url = resp.text.strip()
+                    if raw_url.startswith("https://"):
+                        logger.info("uploaded temp image to catbox.moe as primary: %s", raw_url)
+                        return raw_url
+                logger.warning("catbox.moe upload failed (%d): %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("catbox.moe upload error: %s", e)
+
+    # ── 2. Local self-hosted serving (fallback or primary if public domain exists) ──
     try:
         dest_path = Path(config.USER_UPLOADS_DIR) / fname
         dest_path.write_bytes(img_bytes)
         
         # Build base URL. Fallback to DuckDNS domain if PUBLIC_BASE_URL is not set or is localhost
-        base_url = config.PUBLIC_BASE_URL.strip("/") if config.PUBLIC_BASE_URL else ""
         if not base_url or "localhost" in base_url or "127.0.0.1" in base_url:
             base_url = "https://shart-shop-ai212.duckdns.org"
             
@@ -152,20 +170,21 @@ async def _upload_to_temp_url(img_bytes: bytes, mime: str) -> str:
     except Exception as e:
         logger.warning("Local self-hosted temp image save failed: %s", e)
 
-    # ── 2. catbox.moe fallback (blocked on some datacenter IPs, but works locally) ──
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            files = {"fileToUpload": (fname, img_bytes, mime)}
-            data = {"reqtype": "fileupload"}
-            resp = await client.post("https://catbox.moe/user/api.php", files=files, data=data)
-            if resp.status_code == 200:
-                raw_url = resp.text.strip()
-                if raw_url.startswith("https://"):
-                    logger.info("uploaded temp image to catbox.moe fallback: %s", raw_url)
-                    return raw_url
-            logger.warning("catbox.moe upload failed (%d): %s", resp.status_code, resp.text[:200])
-    except Exception as e:
-        logger.warning("catbox.moe upload error: %s", e)
+    # ── 3. catbox.moe fallback (if we didn't try it first and local failed) ──
+    if not is_local:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                files = {"fileToUpload": (fname, img_bytes, mime)}
+                data = {"reqtype": "fileupload"}
+                resp = await client.post("https://catbox.moe/user/api.php", files=files, data=data)
+                if resp.status_code == 200:
+                    raw_url = resp.text.strip()
+                    if raw_url.startswith("https://"):
+                        logger.info("uploaded temp image to catbox.moe fallback: %s", raw_url)
+                        return raw_url
+                logger.warning("catbox.moe upload failed (%d): %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("catbox.moe upload error: %s", e)
 
     raise RuntimeError(
         "All temporary image upload backends failed. "
@@ -392,30 +411,28 @@ async def _gemini_generate(
         raise RuntimeError("No GOOGLE_API_KEY configured")
 
     client = genai.Client(api_key=api_key)
-    model = config.GEMINI_IMAGE_MODEL
+    # Use the standard Google Imagen model for generating images
+    model = "imagen-4.0-generate-001"
 
-    contents: list = []
-    if reference_image_path:
-        img_bytes, mime = await _resolve_image_path(reference_image_path)
-        contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
-    contents.append(prompt)
+    logger.info("Generating image via Google GenAI SDK (Imagen 3)...")
 
     response = await asyncio.to_thread(
-        client.models.generate_content,
+        client.models.generate_images,
         model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            output_mime_type="image/jpeg",
+            aspect_ratio="1:1"
         ),
     )
 
-    if response.candidates:
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                ext = ".png" if "png" in part.inline_data.mime_type else ".jpg"
-                return _save_image(part.inline_data.data, is_tryon, ext)
+    if response.generated_images:
+        img_data = response.generated_images[0]
+        if hasattr(img_data, "image") and hasattr(img_data.image, "image_bytes"):
+            return _save_image(img_data.image.image_bytes, is_tryon, ".jpg")
 
-    raise RuntimeError("Gemini returned no image data")
+    raise RuntimeError("Google Gemini/Imagen returned no image data")
 
 
 # ── OpenAI GPT Image Backend ───────────────────────────────────────────────
